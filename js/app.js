@@ -231,8 +231,36 @@ async function uploadAudioBlob(qnumber, blob) {
 }
 
 /**
- * Validates (written XOR voice per question), uploads recordedBlobs to voice-memos, then inserts research_responses.
- * text_q* / trans_q* are filled only for written mode; audio_q* only for voice mode. Success UI runs only after uploads + insert succeed.
+ * Parses JSON returned from the transcribe-audio Edge Function (shape may vary).
+ * Expects fields like `text`, `transcription`, or `transcript`, or a nested `data.text`.
+ */
+function transcriptionFromInvokeData(data) {
+  if (data == null) return '';
+  if (typeof data === 'string') return data.trim();
+  if (typeof data.text === 'string') return data.text.trim();
+  if (typeof data.transcription === 'string') return data.transcription.trim();
+  if (typeof data.transcript === 'string') return data.transcript.trim();
+  if (data.data != null && typeof data.data === 'object' && typeof data.data.text === 'string') {
+    return data.data.text.trim();
+  }
+  return '';
+}
+
+async function transcribeAudioUrl(publicUrl) {
+  const { data, error } = await supabaseClient.functions.invoke('transcribe-audio', {
+    body: { audioUrl: publicUrl },
+  });
+  if (error) {
+    console.error('[transcribe-audio] invoke failed:', error);
+    throw error;
+  }
+  return transcriptionFromInvokeData(data);
+}
+
+/**
+ * Validates (written XOR voice per question), uploads recordedBlobs to voice-memos, transcribes audio via Edge Function, then inserts research_responses.
+ * text_q* holds written answers; trans_q* matches written text or transcription from audio; audio_q* holds voice URLs when used.
+ * Success UI runs only after uploads, transcriptions, and insert succeed.
  */
 async function submitSurvey(ev) {
   ev.preventDefault();
@@ -319,6 +347,14 @@ async function submitSurvey(ev) {
     audio_q5: '',
   };
 
+  /** Written text for text-mode questions; audio-mode filled after transcribe. */
+  const transByQ = { 1: '', 2: '', 3: '', 4: '', 5: '' };
+  for (let qt = 1; qt <= 5; qt++) {
+    if (getResponseMode(qt) === 'text') {
+      transByQ[qt] = getResponseText(qt);
+    }
+  }
+
   const submitLabelDefault = submitBtn.textContent;
   submitBtn.textContent = 'Submitting…';
 
@@ -326,12 +362,15 @@ async function submitSurvey(ev) {
     try {
       for (let qUp = 1; qUp <= 5; qUp++) {
         if (getResponseMode(qUp) === 'audio' && recordedBlobs['q' + qUp]) {
-          audioUrls['audio_q' + qUp] = await uploadAudioBlob(qUp, recordedBlobs['q' + qUp]);
+          const publicUrl = await uploadAudioBlob(qUp, recordedBlobs['q' + qUp]);
+          audioUrls['audio_q' + qUp] = publicUrl;
+          transByQ[qUp] = await transcribeAudioUrl(publicUrl);
         }
       }
     } catch (err) {
-      console.error('[Supabase storage] upload exception:', err);
-      showError('Audio upload failed: ' + (err.message || err));
+      console.error('[Supabase storage / transcribe] exception:', err);
+      const msg = err && err.message ? err.message : String(err);
+      showError('Audio upload or transcription failed: ' + msg);
       submitBtn.disabled = false;
       submitBtn.textContent = submitLabelDefault;
       return;
@@ -361,11 +400,11 @@ async function submitSurvey(ev) {
     text_q3: t3,
     text_q4: t4,
     text_q5: t5,
-    trans_q1: t1,
-    trans_q2: t2,
-    trans_q3: t3,
-    trans_q4: t4,
-    trans_q5: t5,
+    trans_q1: transByQ[1],
+    trans_q2: transByQ[2],
+    trans_q3: transByQ[3],
+    trans_q4: transByQ[4],
+    trans_q5: transByQ[5],
     audio_q1: audioUrls.audio_q1 || '',
     audio_q2: audioUrls.audio_q2 || '',
     audio_q3: audioUrls.audio_q3 || '',
