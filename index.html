@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="css/style.css">
+  <title>Research Study</title>
+  <!-- FIU Colors CSS -->
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background-color: #f5f6fa;
+      color: #081E3F;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background-color: #081E3F;
+      color: #B6862C;
+      padding: 2rem 0 1rem 0;
+      text-align: center;
+    }
+    main {
+      max-width: 700px;
+      margin: 2rem auto;
+      background: #fff;
+      padding: 2rem 2.5rem 2.5rem 2.5rem;
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(8, 30, 63, .09);
+    }
+    h2 {
+      color: #081E3F;
+      border-bottom: 2px solid #B6862C;
+      padding-bottom: .25em;
+      margin-top: 2em;
+      margin-bottom: 1em;
+    }
+    label {
+      font-weight: 600;
+      margin-bottom: .4em;
+      display: block;
+      color: #081E3F;
+    }
+    input, select, textarea {
+      border: 1.5px solid #B6862C;
+      background: #fafdff;
+      color: #081E3F;
+      border-radius: 5px;
+      font-size: 1em;
+      padding: 0.48em;
+      margin-bottom: 0.25em;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    select {
+      cursor: pointer;
+      min-height: 2.65em;
+      line-height: 1.35;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.45;
+      margin-top: 0.6em;
+    }
+    /* Plain textarea editing (not read-write-plaintext-only) — helps WebKit show spell check */
+    textarea.survey-response-textarea {
+      -webkit-user-modify: read-write;
+    }
+    .demographics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.4em 2em;
+    }
+    .demographics-grid > .field-block--full {
+      grid-column: 1 / -1;
+    }
+    .field-block {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 0.5em;
+    }
+    .field-block > label:first-of-type {
+      margin-bottom: 0.35em;
+    }
+    .field-hint {
+      font-size: 0.9em;
+      font-weight: 500;
+      color: #3d4f6e;
+      margin: 0 0 0.5em 0;
+      line-height: 1.35;
+    }
+    /* Subtext directly under inputs — research-form style */
+    .field-subtext-below {
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: #666;
+      line-height: 1.4;
+      margin: 0.3em 0 0.65em 0;
+    }
+    .field-block > input + .field-subtext-below,
+    .field-block > select + .field-subtext-below {
+      margin-top: 0.25em;
+    }
+    .field-block > input:has(+ .field-subtext-below),
+    .field-block > select:has(+ .field-subtext-below) {
+      margin-bottom: 0;
+    }
+    .measure-row {
+      display: grid;
+      grid-template-columns: 1fr 5.75rem;
+      gap: 0.65em;
+      align-items: stretch;
+    }
+    .measure-row input {
+      margin-bottom: 0.25em;
+    }
+    .measure-row select {
+      margin-bottom: 0.25em;
+    }
+    .response-card {
+      background: #f3f6fa;
+      border: 1.5px solid #B6862C;
+      padding: 1.35em 1.15em;
+      border-radius: 10px;
+      margin-bottom: 1.5em;
+    }
+    .response-card .q-prompt {
+      font-weight: 700;
+      color: #081E3F;
+      margin: 0 0 0.35em 0;
+      line-height: 1.35;
+    }
+    .response-card .q-body {
+      margin: 0 0 0.5em 0;
+      line-height: 1.45;
+    }
+    .response-card .q-instruction {
+      font-size: 0.92em;
+      color: #3d4f6e;
+      margin: 0 0 0.85em 0;
+      font-style: italic;
+    }
+    .response-mode-fieldset {
+      border: none;
+      margin: 0 0 0.75em 0;
+      padding: 0;
+    }
+    .response-mode-legend {
+      font-weight: 600;
+      color: #081E3F;
+      font-size: 0.95em;
+      margin-bottom: 0.45em;
+      padding: 0;
+    }
+    .response-mode-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35em;
+      margin-right: 1.25em;
+      margin-bottom: 0.35em;
+      font-size: 0.95em;
+      cursor: pointer;
+      font-weight: 500;
+      color: #081E3F;
+    }
+    .response-mode-option input {
+      margin: 0;
+      width: auto;
+      accent-color: #B6862C;
+    }
+    .response-text-panel,
+    .response-audio-panel {
+      margin-top: 0.25em;
+    }
+    .response-card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1em;
+      align-items: center;
+      margin-top: 0.5em;
+    }
+    .record-btn {
+      background: #B6862C;
+      color: #081E3F;
+      border: none;
+      border-radius: 5px;
+      padding: .55em 1.25em;
+      font-weight: 700;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    }
+    .record-btn:hover:not(:disabled) {
+      background: #c9973a;
+    }
+    .audio-controls {
+      display: flex;
+      gap: 1.2em;
+      align-items: center;
+      flex: 1;
+      min-width: 200px;
+    }
+    button {
+      background: #B6862C;
+      color: #081E3F;
+      border: none;
+      border-radius: 5px;
+      padding: .55em 1.3em;
+      font-weight: 700;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background 0.13s;
+    }
+    button:active {
+      background: #9c741d;
+    }
+    button[disabled] {
+      opacity: 0.5;
+      cursor: not-allowed !important;
+    }
+    .submit-btn {
+      background: #081E3F;
+      color: #fff;
+      font-size: 1.1em;
+      margin-top: 2em;
+      width: 100%;
+      padding: .8em;
+      letter-spacing: .05em;
+    }
+    .success-message {
+      color: #34854c;
+      font-weight: 700;
+      margin-top: 1em;
+      text-align: center;
+    }
+    .error-message {
+      color: #b52121;
+      font-weight: 700;
+      margin-top: 1em;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      .demographics-grid {
+        grid-template-columns: 1fr;
+      }
+      .measure-row {
+        grid-template-columns: 1fr;
+      }
+      main {
+        padding: 1em 0.3em;
+      }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Research Study</h1>
+  <p style="color:#fff;font-size:1.18em;line-height:1.35em;margin:0.2em auto 0 auto;max-width:560px;font-weight:400;">
+    Thank you for participating. Complete the demographics, then answer each survey question in writing and/or by voice.
+  </p>
+</header>
+<main>
+  <form id="research-survey" autocomplete="off" spellcheck="true">
+    <h2>Demographics</h2>
+    <div class="demographics-grid">
+      <div class="field-block">
+        <label for="age">Age</label>
+        <input type="number" id="age" name="age" min="10" max="120" step="1" required>
+      </div>
+      <div class="field-block">
+        <label for="height">Height</label>
+        <div class="measure-row">
+          <input type="number" id="height" name="height" min="1" max="300" step="0.1" placeholder="Height" required inputmode="decimal" aria-label="Height value">
+          <select id="height_unit" name="height_unit" required aria-label="Height unit">
+            <option value="">Unit</option>
+            <option value="cm">cm</option>
+            <option value="in">in</option>
+          </select>
+        </div>
+        <p class="field-subtext-below">Enter your height as a number only, then choose <strong>cm</strong> (centimeters) or <strong>in</strong> (total inches—for example, 68 for 5 ft 8 in).</p>
+      </div>
+      <div class="field-block">
+        <label for="current_weight">Current Weight</label>
+        <div class="measure-row">
+          <input type="number" id="current_weight" name="current_weight" min="1" max="500" step="0.1" placeholder="Weight" required inputmode="decimal" aria-label="Weight value">
+          <select id="weight_unit" name="weight_unit" required aria-label="Weight unit">
+            <option value="">Unit</option>
+            <option value="kg">kg</option>
+            <option value="lbs">lbs</option>
+          </select>
+        </div>
+        <p class="field-subtext-below">Enter your weight as a number only, then choose <strong>kg</strong> (kilograms) or <strong>lbs</strong> (pounds).</p>
+      </div>
+      <div class="field-block">
+        <label for="bio_sex">Biological Sex</label>
+        <select id="bio_sex" name="bio_sex" required>
+          <option value="">Select</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="prefer_not_to_say">Prefer not to say</option>
+        </select>
+      </div>
+      <div class="field-block">
+        <label for="ethnicity">Ethnicity</label>
+        <select id="ethnicity" name="ethnicity" required>
+          <option value="">Select</option>
+          <option value="hispanic_or_latino">Hispanic or Latino</option>
+          <option value="american_indian_alaska_native">American Indian or Alaska Native</option>
+          <option value="asian">Asian</option>
+          <option value="black_african_american">Black or African American</option>
+          <option value="native_hawaiian_pacific_islander">Native Hawaiian or Other Pacific Islander</option>
+          <option value="white">White</option>
+        </select>
+      </div>
+      <div class="field-block">
+        <label for="years_training">Years of Training</label>
+        <input type="number" id="years_training" name="years_training" min="0" max="80" step="0.1" required>
+      </div>
+      <div class="field-block">
+        <label for="days_per_week">Days Per Week</label>
+        <input type="number" id="days_per_week" name="days_per_week" min="0" max="7" step="0.1" required>
+        <p class="field-subtext-below">In a typical week, on average, how many days do you train?</p>
+      </div>
+      <div class="field-block">
+        <label for="typical_training_minutes">Typical Training Duration</label>
+        <input type="number" id="typical_training_minutes" name="typical_training_minutes" min="1" max="600" step="1" required>
+        <p class="field-subtext-below">On a typical training session, how many minutes is it?</p>
+      </div>
+      <div class="field-block field-block--full">
+        <label for="primary_modality_select">Primary Modality</label>
+        <select id="primary_modality_select" name="primary_modality_select" required>
+          <option value="">Select</option>
+          <optgroup label="Aerobic / Endurance">
+            <option value="running">Running</option>
+            <option value="cycling">Cycling</option>
+            <option value="swimming">Swimming</option>
+            <option value="rowing">Rowing</option>
+          </optgroup>
+          <optgroup label="Resistance Training">
+            <option value="traditional_weightlifting">Traditional Weightlifting</option>
+            <option value="calisthenics">Calisthenics</option>
+            <option value="powerlifting">Powerlifting</option>
+            <option value="olympic_weightlifting">Olympic Weightlifting</option>
+          </optgroup>
+          <optgroup label="Functional / High-Intensity">
+            <option value="crossfit">CrossFit</option>
+            <option value="circuit_training">Circuit Training</option>
+          </optgroup>
+          <option value="other">Other (type below)</option>
+        </select>
+        <p class="field-subtext-below">Select your main training style, or choose Other and describe it below.</p>
+        <div id="primary_modality_other_wrap" class="primary-modality-other-wrap" hidden>
+          <label for="primary_modality_other" class="field-hint" style="margin-top:0.75em;">Specify your modality</label>
+          <input type="text" id="primary_modality_other" name="primary_modality_other" placeholder="e.g., Dance, sport-specific training" autocomplete="off" aria-label="Primary modality if Other">
+        </div>
+      </div>
+    </div>
+
+    <h2>Survey Questions</h2>
+    <p class="field-hint" style="margin-bottom:1.2em;">For each question, choose <strong>either</strong> a written answer <strong>or</strong> a voice recording — not both. Please answer in as much detail as possible.</p>
+    <div id="responses-section" spellcheck="true">
+      <div class="response-card" data-q="1">
+        <p class="q-body">1. Tell us about the first time you started exercising. What was the initial experience like (e.g., was it intimidating, exciting, or difficult)?</p>
+        <p class="q-instruction">Please describe in as much detail as possible.</p>
+        <fieldset class="response-mode-fieldset">
+          <legend class="response-mode-legend">Answer format (choose one)</legend>
+          <label class="response-mode-option"><input type="radio" name="response_mode_1" value="text" checked data-q="1"> Written response</label>
+          <label class="response-mode-option"><input type="radio" name="response_mode_1" value="audio" data-q="1"> Voice recording</label>
+        </fieldset>
+        <div class="response-text-panel" data-q="1">
+          <textarea id="response_q1" name="response_q1" rows="5" placeholder="Type your answer here…" class="survey-response-textarea" lang="en" spellcheck="true" autocomplete="on" autocorrect="on"></textarea>
+        </div>
+        <div class="response-audio-panel" data-q="1" hidden>
+          <div class="response-card-actions">
+            <button type="button" class="record-btn" data-q="1">Record answer</button>
+            <div class="audio-controls">
+              <audio controls style="display:none;" class="audio-player" data-q="1"></audio>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="response-card" data-q="2">
+        <p class="q-body">2. Why did you originally decide to start, and how has your &ldquo;why&rdquo; evolved over the last decade?</p>
+        <p class="q-instruction">Please describe in as much detail as possible.</p>
+        <fieldset class="response-mode-fieldset">
+          <legend class="response-mode-legend">Answer format (choose one)</legend>
+          <label class="response-mode-option"><input type="radio" name="response_mode_2" value="text" checked data-q="2"> Written response</label>
+          <label class="response-mode-option"><input type="radio" name="response_mode_2" value="audio" data-q="2"> Voice recording</label>
+        </fieldset>
+        <div class="response-text-panel" data-q="2">
+          <textarea id="response_q2" name="response_q2" rows="5" placeholder="Type your answer here…" class="survey-response-textarea" lang="en" spellcheck="true" autocomplete="on" autocorrect="on"></textarea>
+        </div>
+        <div class="response-audio-panel" data-q="2" hidden>
+          <div class="response-card-actions">
+            <button type="button" class="record-btn" data-q="2">Record answer</button>
+            <div class="audio-controls">
+              <audio controls style="display:none;" class="audio-player" data-q="2"></audio>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="response-card" data-q="3">
+        <p class="q-body">3. During your ten years or more of training, was there ever a time you wanted to give up? Please explain what kept you going and why.</p>
+        <p class="q-instruction">Please describe in as much detail as possible.</p>
+        <fieldset class="response-mode-fieldset">
+          <legend class="response-mode-legend">Answer format (choose one)</legend>
+          <label class="response-mode-option"><input type="radio" name="response_mode_3" value="text" checked data-q="3"> Written response</label>
+          <label class="response-mode-option"><input type="radio" name="response_mode_3" value="audio" data-q="3"> Voice recording</label>
+        </fieldset>
+        <div class="response-text-panel" data-q="3">
+          <textarea id="response_q3" name="response_q3" rows="5" placeholder="Type your answer here…" class="survey-response-textarea" lang="en" spellcheck="true" autocomplete="on" autocorrect="on"></textarea>
+        </div>
+        <div class="response-audio-panel" data-q="3" hidden>
+          <div class="response-card-actions">
+            <button type="button" class="record-btn" data-q="3">Record answer</button>
+            <div class="audio-controls">
+              <audio controls style="display:none;" class="audio-player" data-q="3"></audio>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="response-card" data-q="4">
+        <p class="q-body">4. Describe the hardest or most intense exercise session you&rsquo;ve ever had. How did you feel physically and mentally immediately afterward (e.g., sense of accomplishment, physical exhaustion, nausea, or mental clarity)? Please specify what the activity was (e.g., a specific race, a heavy lifting session, or a high-intensity circuit).</p>
+        <p class="q-instruction">Please describe in as much detail as possible.</p>
+        <fieldset class="response-mode-fieldset">
+          <legend class="response-mode-legend">Answer format (choose one)</legend>
+          <label class="response-mode-option"><input type="radio" name="response_mode_4" value="text" checked data-q="4"> Written response</label>
+          <label class="response-mode-option"><input type="radio" name="response_mode_4" value="audio" data-q="4"> Voice recording</label>
+        </fieldset>
+        <div class="response-text-panel" data-q="4">
+          <textarea id="response_q4" name="response_q4" rows="5" placeholder="Type your answer here…" class="survey-response-textarea" lang="en" spellcheck="true" autocomplete="on" autocorrect="on"></textarea>
+        </div>
+        <div class="response-audio-panel" data-q="4" hidden>
+          <div class="response-card-actions">
+            <button type="button" class="record-btn" data-q="4">Record answer</button>
+            <div class="audio-controls">
+              <audio controls style="display:none;" class="audio-player" data-q="4"></audio>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="response-card" data-q="5">
+        <p class="q-body">5. Why did you choose to continue training after that specific &ldquo;hard&rdquo; session, and has that level of intensity become a regular part of your routine?</p>
+        <p class="q-instruction">Please describe in as much detail as possible.</p>
+        <fieldset class="response-mode-fieldset">
+          <legend class="response-mode-legend">Answer format (choose one)</legend>
+          <label class="response-mode-option"><input type="radio" name="response_mode_5" value="text" checked data-q="5"> Written response</label>
+          <label class="response-mode-option"><input type="radio" name="response_mode_5" value="audio" data-q="5"> Voice recording</label>
+        </fieldset>
+        <div class="response-text-panel" data-q="5">
+          <textarea id="response_q5" name="response_q5" rows="5" placeholder="Type your answer here…" class="survey-response-textarea" lang="en" spellcheck="true" autocomplete="on" autocorrect="on"></textarea>
+        </div>
+        <div class="response-audio-panel" data-q="5" hidden>
+          <div class="response-card-actions">
+            <button type="button" class="record-btn" data-q="5">Record answer</button>
+            <div class="audio-controls">
+              <audio controls style="display:none;" class="audio-player" data-q="5"></audio>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button type="submit" class="submit-btn">Submit Survey</button>
+    <div id="feedback" class="success-message" style="display:none;"></div>
+    <div id="error" class="error-message" style="display:none;"></div>
+  </form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
