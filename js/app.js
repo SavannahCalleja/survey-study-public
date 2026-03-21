@@ -232,10 +232,11 @@ async function uploadAudioBlob(qnumber, blob) {
 
 /**
  * Validates (written XOR voice per question), uploads to `voice-memos`, inserts into `research_responses`.
- * text_q* / trans_q* for written answers; for voice, trans_* starts empty until the transcribe-audio Edge Function (DB webhook) fills them.
- * Success shows immediately after insert — no Edge Function invoke from the browser.
+ * text_q* / trans_q* for written answers; for voice, trans_* starts empty until the DB webhook runs the Edge Function.
+ * Success shows immediately after insert. Never call supabase.functions from the browser.
  */
 async function submitSurvey(ev) {
+  // Upload + insert only. Background transcription is triggered by the database webhook, not the client.
   ev.preventDefault();
 
   if (!supabaseClient) {
