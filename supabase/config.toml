@@ -1,0 +1,3 @@
+# Database webhooks call this function without a user JWT — disable verification for that route.
+[functions.transcribe-audio]
+verify_jwt = false

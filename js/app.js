@@ -231,36 +231,9 @@ async function uploadAudioBlob(qnumber, blob) {
 }
 
 /**
- * Parses JSON returned from the transcribe-audio Edge Function (shape may vary).
- * Expects fields like `text`, `transcription`, or `transcript`, or a nested `data.text`.
- */
-function transcriptionFromInvokeData(data) {
-  if (data == null) return '';
-  if (typeof data === 'string') return data.trim();
-  if (typeof data.text === 'string') return data.text.trim();
-  if (typeof data.transcription === 'string') return data.transcription.trim();
-  if (typeof data.transcript === 'string') return data.transcript.trim();
-  if (data.data != null && typeof data.data === 'object' && typeof data.data.text === 'string') {
-    return data.data.text.trim();
-  }
-  return '';
-}
-
-async function transcribeAudioUrl(publicUrl) {
-  const { data, error } = await supabaseClient.functions.invoke('transcribe-audio', {
-    body: { audioUrl: publicUrl },
-  });
-  if (error) {
-    console.error('[transcribe-audio] invoke failed:', error);
-    throw error;
-  }
-  return transcriptionFromInvokeData(data);
-}
-
-/**
- * Validates (written XOR voice per question), uploads recordedBlobs to voice-memos, transcribes audio via Edge Function, then inserts research_responses.
- * text_q* holds written answers; trans_q* matches written text or transcription from audio; audio_q* holds voice URLs when used.
- * Success UI runs only after uploads, transcriptions, and insert succeed.
+ * Validates (written XOR voice per question), uploads to `voice-memos`, inserts into `research_responses`.
+ * text_q* / trans_q* for written answers; for voice, trans_* starts empty until the transcribe-audio Edge Function (DB webhook) fills them.
+ * Success shows immediately after insert — no Edge Function invoke from the browser.
  */
 async function submitSurvey(ev) {
   ev.preventDefault();
@@ -347,7 +320,7 @@ async function submitSurvey(ev) {
     audio_q5: '',
   };
 
-  /** Written text for text-mode questions; audio-mode filled after transcribe. */
+  /** Written text for text-mode questions; audio-mode leaves trans_* empty for background jobs. */
   const transByQ = { 1: '', 2: '', 3: '', 4: '', 5: '' };
   for (let qt = 1; qt <= 5; qt++) {
     if (getResponseMode(qt) === 'text') {
@@ -362,15 +335,13 @@ async function submitSurvey(ev) {
     try {
       for (let qUp = 1; qUp <= 5; qUp++) {
         if (getResponseMode(qUp) === 'audio' && recordedBlobs['q' + qUp]) {
-          const publicUrl = await uploadAudioBlob(qUp, recordedBlobs['q' + qUp]);
-          audioUrls['audio_q' + qUp] = publicUrl;
-          transByQ[qUp] = await transcribeAudioUrl(publicUrl);
+          audioUrls['audio_q' + qUp] = await uploadAudioBlob(qUp, recordedBlobs['q' + qUp]);
         }
       }
     } catch (err) {
-      console.error('[Supabase storage / transcribe] exception:', err);
+      console.error('[Supabase storage] upload exception:', err);
       const msg = err && err.message ? err.message : String(err);
-      showError('Audio upload or transcription failed: ' + msg);
+      showError('Audio upload failed: ' + msg);
       submitBtn.disabled = false;
       submitBtn.textContent = submitLabelDefault;
       return;
