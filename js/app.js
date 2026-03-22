@@ -29,6 +29,7 @@ const BACKEND_ONLY_TRANSCRIPTION_COLUMNS = [
   'trans_q5',
 ];
 
+/** Used only in `submitSurvey` (final main-survey save). Screening "Proceed" does not call this. */
 function stripBackendTranscriptionColumns(payload) {
   var out = Object.assign({}, payload);
   for (var i = 0; i < BACKEND_ONLY_TRANSCRIPTION_COLUMNS.length; i++) {
@@ -640,18 +641,16 @@ function syncScreeningDetailPanels(which) {
 
 /**
  * Follow-up complete when: main question is No (handled by caller), or Yes with text in textarea,
- * or Yes with voice: recording exists and **Storage upload finished** (public URL in memory).
+ * or Yes with voice: **Storage upload finished** (public URL in memory). Does not wait on DB or transcription.
  */
 function screeningDetailComplete(which) {
   if (getScreeningDetailMode(which) === 'text') {
     return !!getScreeningReasonText('screening_q' + which + '_reason');
   }
   if (which === 3) {
-    if (!screeningRecordedBlobs.sq3) return false;
     return !!(screeningQ3UploadedUrl && String(screeningQ3UploadedUrl).trim());
   }
   if (which === 4) {
-    if (!screeningRecordedBlobs.sq4) return false;
     return !!(screeningQ4UploadedUrl && String(screeningQ4UploadedUrl).trim());
   }
   return !!screeningRecordedBlobs['sq' + which];
@@ -1067,21 +1066,12 @@ async function runScreeningVoiceUploadPipeline(which, blob) {
   setScreeningRecordButtonIdle(which);
   updateScreeningProceedButton();
 
+  /** Draft row is optional for Proceed — Storage URL already proves the clip; do not clear URL on DB errors. */
   persistScreeningDraftAudioUrl(which, publicUrl).catch(function (err) {
-    console.warn('[Screening] Could not save audio URL to database:', err);
-    showError('Recording uploaded, but saving the link failed. Please try again or use a written response.');
-    if (which === 3) {
-      screeningQ3UploadedUrl = '';
-    } else {
-      screeningQ4UploadedUrl = '';
-    }
-    setScreeningUploadStatus(which, 'clear');
-    setScreeningRecordButtonIdle(which);
-    updateScreeningProceedButton();
-  });
-
-  onScreeningChange().catch(function (err) {
-    console.warn('[Screening]', err);
+    console.warn('[Screening] Could not save audio URL to database (you can still proceed):', err);
+    showError(
+      'Your recording is saved to storage, but the survey could not link it to your profile yet. You may continue; your answers will still be submitted.'
+    );
   });
 }
 
