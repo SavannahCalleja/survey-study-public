@@ -12,6 +12,30 @@ const recordedBlobs = {};
 const previewUrls = {};
 /** Pre-uploaded Storage public URLs for main survey Q1–Q5 (fire-and-forget after each recording). */
 const mainSurveyUploadedAudioUrls = { 1: '', 2: '', 3: '', 4: '', 5: '' };
+
+/**
+ * `research_responses` columns filled only by the transcribe Edge Function.
+ * submitSurvey must not send these (would overwrite server transcriptions with empty strings).
+ */
+const BACKEND_ONLY_TRANSCRIPTION_COLUMNS = [
+  'screening_q3_reason',
+  'screening_q4_reason',
+  'q3_reason',
+  'q4_reason',
+  'trans_q1',
+  'trans_q2',
+  'trans_q3',
+  'trans_q4',
+  'trans_q5',
+];
+
+function stripBackendTranscriptionColumns(payload) {
+  var out = Object.assign({}, payload);
+  for (var i = 0; i < BACKEND_ONLY_TRANSCRIPTION_COLUMNS.length; i++) {
+    delete out[BACKEND_ONLY_TRANSCRIPTION_COLUMNS[i]];
+  }
+  return out;
+}
 let currentRecordingQ = null;
 let currentStream = null;
 let currentRecorder = null;
@@ -677,10 +701,8 @@ async function onScreeningChange() {
  * (when Q3 follow-up shown)  → screening_q3_detail_mode  ('text'|'audio'|'' )
  * (when Q4 follow-up shown)  → screening_q4_detail_mode  ('text'|'audio'|'' )
  *
- * buildScreeningRowExtras() also sets:
- * screening_q3_reason, screening_q4_reason  (from textarea ids screening_q3_reason, screening_q4_reason)
- * screening_q3_audio_url, screening_q4_audio_url  (same bucket; paths `survey/{participantId}_screening_q3|4.*`)
- * q3_reason, q4_reason — optional duplicate columns on submit; webhook fills `screening_q3_reason` / `screening_q4_reason`.
+ * buildScreeningRowExtras() also sets screening audio URLs and (for drafts / screenout) reason text.
+ * Final submitSurvey strips transcription-only columns so the Edge Function is not overwritten.
  */
 function getScreeningAnswersSnapshot() {
   const q3FollowUp = getScreeningValue('screen_noninjury_break') === 'yes';
@@ -1156,14 +1178,6 @@ async function submitSurvey(ev) {
 
   const qAudioUrls = { 1: '', 2: '', 3: '', 4: '', 5: '' };
 
-  /** Written text for text-mode questions; audio-mode leaves trans_* empty for background jobs. */
-  const transByQ = { 1: '', 2: '', 3: '', 4: '', 5: '' };
-  for (let qt = 1; qt <= 5; qt++) {
-    if (getResponseMode(qt) === 'text') {
-      transByQ[qt] = getResponseText(qt);
-    }
-  }
-
   const submitLabelDefault = submitBtn.textContent;
   submitBtn.textContent = 'Submitting…';
 
@@ -1204,7 +1218,7 @@ async function submitSurvey(ev) {
   const t4 = getResponseMode(4) === 'text' ? getResponseText(4) : '';
   const t5 = getResponseMode(5) === 'text' ? getResponseText(5) : '';
 
-  const row = {
+  const row = stripBackendTranscriptionColumns({
     age: demographics.age,
     height: demographics.height,
     height_unit: demographics.height_unit,
@@ -1221,11 +1235,6 @@ async function submitSurvey(ev) {
     text_q3: t3,
     text_q4: t4,
     text_q5: t5,
-    trans_q1: transByQ[1],
-    trans_q2: transByQ[2],
-    trans_q3: transByQ[3],
-    trans_q4: transByQ[4],
-    trans_q5: transByQ[5],
     q1_audio_url: qAudioUrls[1] || '',
     q2_audio_url: qAudioUrls[2] || '',
     q3_audio_url: qAudioUrls[3] || '',
@@ -1233,7 +1242,7 @@ async function submitSurvey(ev) {
     q5_audio_url: qAudioUrls[5] || '',
     ...screeningExtras,
     submitted_at: new Date().toISOString(),
-  };
+  });
 
   let draftRowId = null;
   try {

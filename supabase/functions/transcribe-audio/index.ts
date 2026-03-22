@@ -99,30 +99,35 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const updates: Record<string, string> = {};
+    const updatePayload: Record<string, string> = {};
 
-    for (const { dbColumn, url: raw } of jobs) {
+    for (const { dbColumn: destColumn, url: raw } of jobs) {
       const fullUrl = resolveFullPublicAudioUrl(raw, supabaseUrl);
       console.log(
-        `[transcribe-audio] Whisper start row=${idStr} dest=${dbColumn} resolvedUrl=${fullUrl.slice(0, 120)}${fullUrl.length > 120 ? "…" : ""}`
+        `[transcribe-audio] Whisper start row=${idStr} dest=${destColumn} resolvedUrl=${fullUrl.slice(0, 120)}${fullUrl.length > 120 ? "…" : ""}`
       );
       try {
-        const text = await transcribeAudioUrl(fullUrl, openaiKey, `row=${idStr} dest=${dbColumn}`);
-        updates[dbColumn] = text;
+        const transcript = await transcribeAudioUrl(fullUrl, openaiKey, `row=${idStr} dest=${destColumn}`);
+        if (typeof transcript !== "string") {
+          throw new Error(`Whisper returned non-string for ${destColumn}: ${typeof transcript}`);
+        }
+        updatePayload[destColumn] = transcript;
         console.log(
-          `[transcribe-audio] Whisper ok row=${idStr} dest=${dbColumn} chars=${text.length}`
+          `[transcribe-audio] Whisper ok row=${idStr} dest=${destColumn} chars=${transcript.length}`
         );
       } catch (jobErr) {
         const msg = jobErr instanceof Error ? jobErr.message : String(jobErr);
         const stack = jobErr instanceof Error ? jobErr.stack : undefined;
-        console.error(`[transcribe-audio] Whisper FAILED row=${idStr} dest=${dbColumn}: ${msg}`, stack ?? "");
+        console.error(`[transcribe-audio] Whisper FAILED row=${idStr} dest=${destColumn}: ${msg}`, stack ?? "");
         throw jobErr;
       }
     }
 
+    console.log("SENDING PAYLOAD:", updatePayload);
+
     const { data: updatedRows, error } = await supabase
       .from("research_responses")
-      .update(updates)
+      .update(updatePayload)
       .eq("id", idStr)
       .select("id");
 
@@ -138,7 +143,7 @@ Deno.serve(async (req) => {
     }
 
     console.log("Update successful");
-    return json({ ok: true, transcribed: Object.keys(updates) });
+    return json({ ok: true, transcribed: Object.keys(updatePayload) });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const stack = e instanceof Error ? e.stack : undefined;
@@ -364,14 +369,36 @@ async function transcribeAudioUrl(audioUrl: string, apiKey: string, context: str
     throw new Error(msg);
   }
 
-  let data: { text?: string };
+  let openAiResponse: unknown;
   try {
-    data = (await tr.json()) as { text?: string };
+    openAiResponse = await tr.json();
   } catch (jsonErr) {
     const m = jsonErr instanceof Error ? jsonErr.message : String(jsonErr);
     console.error(`[transcribe-audio] OpenAI JSON parse error (${context}):`, m, jsonErr);
     throw jsonErr;
   }
 
-  return (data.text ?? "").trim();
+  if (!openAiResponse || typeof openAiResponse !== "object") {
+    console.error(`[transcribe-audio] OpenAI response not an object (${context}):`, openAiResponse);
+    throw new Error(`OpenAI transcription response was not a JSON object (${context})`);
+  }
+
+  const body = openAiResponse as Record<string, unknown>;
+  const rawText = body["text"];
+  if (rawText !== undefined && typeof rawText !== "string") {
+    console.error(`[transcribe-audio] OpenAI 'text' field has wrong type (${context}):`, typeof rawText, body);
+    throw new Error(`OpenAI transcription 'text' was not a string (${context})`);
+  }
+
+  const transcript = typeof rawText === "string" ? rawText.trim() : "";
+  if (transcript.length === 0 && rawText === undefined) {
+    console.error(
+      `[transcribe-audio] OpenAI JSON missing string field 'text' (${context}). Keys:`,
+      Object.keys(body),
+      "body:",
+      JSON.stringify(body).slice(0, 800)
+    );
+  }
+
+  return transcript;
 }
