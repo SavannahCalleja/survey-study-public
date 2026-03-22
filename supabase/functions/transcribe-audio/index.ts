@@ -1,7 +1,7 @@
 /**
  * Database Webhook on `research_responses` (INSERT or UPDATE): transcribe audio URLs on the row.
  * - `q1_audio_url`..`q5_audio_url` → `trans_q1`..`trans_q5` (main survey)
- * - `screening_q3_audio_url` → `q3_reason`, `screening_q4_audio_url` → `q4_reason` (eligibility voice)
+ * - `screening_q3_audio_url` → `screening_q3_reason`, `screening_q4_audio_url` → `screening_q4_reason` (eligibility voice)
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
@@ -66,6 +66,9 @@ Deno.serve(async (req) => {
 
     const jobs = collectTranscriptionJobs(record, oldRecord);
     if (jobs.length === 0) {
+      console.log(
+        `[transcribe-audio] Skip row=${idStr}: no new/changed q1_audio_url..q5_audio_url, screening_q3_audio_url, or screening_q4_audio_url`
+      );
       return json({
         ok: true,
         skipped: "no_new_or_changed_audio_urls",
@@ -74,14 +77,20 @@ Deno.serve(async (req) => {
       });
     }
 
+    console.log(
+      `[transcribe-audio] row=${idStr} jobs=${jobs.length} → columns: ${jobs.map((j) => j.dbColumn).join(", ")}`
+    );
+
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiKey) {
+      console.error("[transcribe-audio] OPENAI_API_KEY is missing");
       return json({ error: "Server misconfiguration" }, 500);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceKey) {
+      console.error("[transcribe-audio] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing");
       return json({ error: "Server misconfiguration" }, 500);
     }
 
@@ -93,8 +102,21 @@ Deno.serve(async (req) => {
 
     for (const { dbColumn, url: raw } of jobs) {
       const fullUrl = resolveFullPublicAudioUrl(raw, supabaseUrl);
-      const text = await transcribeAudioUrl(fullUrl, openaiKey);
-      updates[dbColumn] = text;
+      console.log(
+        `[transcribe-audio] Whisper start row=${idStr} dest=${dbColumn} resolvedUrl=${fullUrl.slice(0, 120)}${fullUrl.length > 120 ? "…" : ""}`
+      );
+      try {
+        const text = await transcribeAudioUrl(fullUrl, openaiKey, `row=${idStr} dest=${dbColumn}`);
+        updates[dbColumn] = text;
+        console.log(
+          `[transcribe-audio] Whisper ok row=${idStr} dest=${dbColumn} chars=${text.length}`
+        );
+      } catch (jobErr) {
+        const msg = jobErr instanceof Error ? jobErr.message : String(jobErr);
+        const stack = jobErr instanceof Error ? jobErr.stack : undefined;
+        console.error(`[transcribe-audio] Whisper FAILED row=${idStr} dest=${dbColumn}: ${msg}`, stack ?? "");
+        throw jobErr;
+      }
     }
 
     const { error } = await supabase
@@ -104,13 +126,16 @@ Deno.serve(async (req) => {
       .select("id");
 
     if (error) {
+      console.error(`[transcribe-audio] Supabase update failed row=${idStr}:`, error.message, error);
       return json({ error: error.message }, 500);
     }
 
+    console.log(`[transcribe-audio] DB updated row=${idStr} columns=${Object.keys(updates).join(", ")}`);
     return json({ ok: true, transcribed: Object.keys(updates) });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const stack = e instanceof Error ? e.stack : undefined;
+    console.error("[transcribe-audio] Unhandled error:", message, stack ?? "");
     return json({ error: message, detail: stack }, 500);
   }
 });
@@ -229,13 +254,13 @@ function collectTranscriptionJobs(
   if (urlChanged("screening_q3_audio_url")) {
     const u = record["screening_q3_audio_url"];
     if (typeof u === "string" && u.trim()) {
-      jobs.push({ dbColumn: "q3_reason", url: u.trim() });
+      jobs.push({ dbColumn: "screening_q3_reason", url: u.trim() });
     }
   }
   if (urlChanged("screening_q4_audio_url")) {
     const u = record["screening_q4_audio_url"];
     if (typeof u === "string" && u.trim()) {
-      jobs.push({ dbColumn: "q4_reason", url: u.trim() });
+      jobs.push({ dbColumn: "screening_q4_reason", url: u.trim() });
     }
   }
 
@@ -269,11 +294,13 @@ function json(data: Record<string, unknown>, status = 200) {
   });
 }
 
-async function transcribeAudioUrl(audioUrl: string, apiKey: string): Promise<string> {
+async function transcribeAudioUrl(audioUrl: string, apiKey: string, context: string): Promise<string> {
   let res: Response;
   try {
     res = await fetch(audioUrl);
   } catch (fetchErr) {
+    const m = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    console.error(`[transcribe-audio] Audio fetch network error (${context}):`, m, fetchErr);
     throw fetchErr;
   }
 
@@ -284,13 +311,17 @@ async function transcribeAudioUrl(audioUrl: string, apiKey: string): Promise<str
     } catch (_) {
       errBody = "(could not read body)";
     }
-    throw new Error(`Failed to fetch audio (${res.status}): ${errBody.slice(0, 500)}`);
+    const msg = `Failed to fetch audio (${context}) HTTP ${res.status}: ${errBody.slice(0, 500)}`;
+    console.error(`[transcribe-audio] ${msg}`);
+    throw new Error(msg);
   }
 
   let buf: ArrayBuffer;
   try {
     buf = await res.arrayBuffer();
   } catch (bufErr) {
+    const m = bufErr instanceof Error ? bufErr.message : String(bufErr);
+    console.error(`[transcribe-audio] Failed to read audio body (${context}):`, m, bufErr);
     throw bufErr;
   }
 
@@ -309,6 +340,8 @@ async function transcribeAudioUrl(audioUrl: string, apiKey: string): Promise<str
       body: form,
     });
   } catch (openaiFetchErr) {
+    const m = openaiFetchErr instanceof Error ? openaiFetchErr.message : String(openaiFetchErr);
+    console.error(`[transcribe-audio] OpenAI request network error (${context}):`, m, openaiFetchErr);
     throw openaiFetchErr;
   }
 
@@ -319,13 +352,17 @@ async function transcribeAudioUrl(audioUrl: string, apiKey: string): Promise<str
     } catch {
       errText = "(unreadable)";
     }
-    throw new Error(`OpenAI transcription failed (${tr.status}): ${errText.slice(0, 2000)}`);
+    const msg = `OpenAI Whisper failed (${context}) HTTP ${tr.status}: ${errText.slice(0, 2000)}`;
+    console.error(`[transcribe-audio] ${msg}`);
+    throw new Error(msg);
   }
 
   let data: { text?: string };
   try {
     data = (await tr.json()) as { text?: string };
   } catch (jsonErr) {
+    const m = jsonErr instanceof Error ? jsonErr.message : String(jsonErr);
+    console.error(`[transcribe-audio] OpenAI JSON parse error (${context}):`, m, jsonErr);
     throw jsonErr;
   }
 

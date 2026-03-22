@@ -21,7 +21,7 @@ let screeningCurrentRecorder = null;
 let screeningCurrentStream = null;
 let screeningCurrentWhich = null;
 
-/** Eligibility Q3/Q4 voice: Whisper transcripts (DB columns `q3_reason` / `q4_reason`). */
+/** Eligibility Q3/Q4 voice: in-memory mirror of DB `screening_q3_reason` / `screening_q4_reason` (also written as `q3_reason`/`q4_reason` on submit if present). */
 let q3_reason = '';
 let q4_reason = '';
 /** Public Storage URLs after upload (reused on final submit). */
@@ -31,7 +31,7 @@ let screeningQ3TranscriptionPending = false;
 let screeningQ4TranscriptionPending = false;
 
 /**
- * Draft `research_responses` row created on first screening voice clip; webhook fills q3_reason/q4_reason.
+ * Draft `research_responses` row created on first screening voice clip; webhook fills screening_q3_reason / screening_q4_reason.
  * Final survey submit updates this row instead of inserting again.
  */
 const SCREENING_ROW_ID_KEY = 'research_survey_screening_row_id';
@@ -41,7 +41,7 @@ const SCREENING_ROW_ID_KEY = 'research_survey_screening_row_id';
  * 1) Browser uploads to Storage via `uploadParticipantAudio` → object key `survey/{participantId}_{questionSlug}_{timestamp}.ext`.
  * 2) Client writes the matching `*_url` column on `research_responses` (INSERT/UPDATE).
  * 3) Configure Supabase so DB or Storage webhooks invoke your Edge Function (e.g. `transcribe-audio`) when those URLs change.
- *    Main survey: `q1_audio_url`…`q5_audio_url` → `trans_q1`…`trans_q5`. Eligibility: `screening_q3_audio_url` / `screening_q4_audio_url` → `q3_reason` / `q4_reason`.
+ *    Main survey: `q1_audio_url`…`q5_audio_url` → `trans_q1`…`trans_q5`. Eligibility audio → `screening_q3_reason` / `screening_q4_reason`.
  */
 const AUDIO_STORAGE_BUCKET = 'voice-memos';
 const AUDIO_STORAGE_SURVEY_PREFIX = 'survey';
@@ -645,7 +645,7 @@ async function onScreeningChange() {
  * buildScreeningRowExtras() also sets:
  * screening_q3_reason, screening_q4_reason  (from textarea ids screening_q3_reason, screening_q4_reason)
  * screening_q3_audio_url, screening_q4_audio_url  (same bucket; paths `survey/{participantId}_screening_q3|4.*`)
- * q3_reason, q4_reason — eligibility voice transcripts (filled by webhook after INSERT/UPDATE); text mode mirrors textarea.
+ * q3_reason, q4_reason — optional duplicate columns on submit; webhook fills `screening_q3_reason` / `screening_q4_reason`.
  */
 function getScreeningAnswersSnapshot() {
   const q3FollowUp = getScreeningValue('screen_noninjury_break') === 'yes';
@@ -954,7 +954,7 @@ function uploadEligibilityScreeningAudio(which3Or4, blob) {
 }
 
 /**
- * Poll until DB webhook + `transcribe-audio` fill `q3_reason` or `q4_reason` on the draft row.
+ * Poll until DB webhook + `transcribe-audio` fill `screening_q3_reason` / `screening_q4_reason` on the draft row.
  */
 async function pollScreeningReasonColumn(rowId, columnKey) {
   const maxAttempts = 60;
@@ -978,12 +978,12 @@ async function pollScreeningReasonColumn(rowId, columnKey) {
 }
 
 /**
- * Upload → INSERT or UPDATE `research_responses` with screening audio URL → webhook transcribes → poll `q3_reason`/`q4_reason`.
+ * Upload → INSERT or UPDATE `research_responses` with screening audio URL → webhook transcribes → poll `screening_q*_reason`.
  */
 async function runScreeningVoiceWebhookPipeline(which, blob) {
   if (!supabaseClient) throw new Error('Supabase not initialized');
   const urlField = which === 3 ? 'screening_q3_audio_url' : 'screening_q4_audio_url';
-  const reasonCol = which === 3 ? 'q3_reason' : 'q4_reason';
+  const reasonCol = which === 3 ? 'screening_q3_reason' : 'screening_q4_reason';
 
   if (which === 3) {
     q3_reason = '';
@@ -1064,7 +1064,7 @@ async function runScreeningVoiceWebhookPipeline(which, blob) {
 /**
  * Validates (written XOR voice per question), uploads to `voice-memos`, saves `research_responses`.
  * Main survey voice: `trans_q*` filled by DB webhook → `transcribe-audio` after insert/update.
- * Eligibility voice: same webhook fills `q3_reason` / `q4_reason` from screening audio URLs (draft row may exist before final submit).
+ * Eligibility voice: webhook fills `screening_q3_reason` / `screening_q4_reason` from screening audio URLs (draft row may exist before final submit).
  * Never call Edge Functions from the browser for transcription.
  */
 async function submitSurvey(ev) {
