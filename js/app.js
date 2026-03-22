@@ -125,7 +125,8 @@ function applyRecordingLock(activeQ, isRecording) {
     radio.disabled = isRecording;
   });
 
-  document.querySelectorAll('.record-btn').forEach(function (b) {
+  /** Only main survey buttons (have data-q). Screening uses .screening-record-btn + data-screening-q — must not be disabled here. */
+  document.querySelectorAll('.record-btn[data-q]').forEach(function (b) {
     const qq = parseInt(b.getAttribute('data-q'), 10);
     if (getResponseMode(qq) !== 'audio') {
       b.disabled = true;
@@ -161,7 +162,7 @@ function setRecordButtonActive(q) {
 }
 
 function resetAllRecordButtons() {
-  document.querySelectorAll('.record-btn').forEach(function (b) {
+  document.querySelectorAll('.record-btn[data-q]').forEach(function (b) {
     b.classList.remove('recording');
     b.textContent = 'Record answer';
   });
