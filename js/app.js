@@ -31,17 +31,16 @@ let screeningQ3UploadedUrl = '';
 let screeningQ4UploadedUrl = '';
 
 /**
- * Draft `research_responses` row created on first screening voice clip; webhook fills screening_q3_reason / screening_q4_reason.
+ * Draft `research_responses` row created on first screening voice clip.
  * Final survey submit updates this row instead of inserting again.
  */
 const SCREENING_ROW_ID_KEY = 'research_survey_screening_row_id';
 
 /**
- * Audio pipeline (single source of truth — no client-side transcription calls):
+ * Audio pipeline (single source of truth — browser never waits on server text jobs):
  * 1) Browser uploads to Storage via `uploadParticipantAudio` → object key `survey/{participantId}_{questionSlug}_{timestamp}.ext`.
- * 2) Client writes the matching `*_url` column on `research_responses` (INSERT/UPDATE).
- * 3) Configure Supabase so DB or Storage webhooks invoke your Edge Function (e.g. `transcribe-audio`) when those URLs change.
- *    Main survey: `q1_audio_url`…`q5_audio_url` → `trans_q1`…`trans_q5`. Eligibility audio → `screening_q3_reason` / `screening_q4_reason`.
+ * 2) Client writes the matching `*_url` column on `research_responses` (INSERT/UPDATE), without blocking the UI afterward.
+ * 3) Optional: DB/Storage webhooks can run your Edge Function to fill text columns from those URLs.
  */
 const AUDIO_STORAGE_BUCKET = 'voice-memos';
 const AUDIO_STORAGE_SURVEY_PREFIX = 'survey';
@@ -185,6 +184,7 @@ function setMainSurveyUploadStatus(q, kind) {
   }
 }
 
+/** Uploads to Storage only; UI unlocks as soon as `uploadParticipantAudio` resolves. */
 function runMainSurveyUploadAfterStop(qNum, blob) {
   if (!supabaseClient) {
     showError('Survey is not connected. Check Supabase settings in js/app.js.');
@@ -616,7 +616,7 @@ function syncScreeningDetailPanels(which) {
 
 /**
  * Follow-up complete when: main question is No (handled by caller), or Yes with text in textarea,
- * or Yes with voice: recording exists and **Storage upload finished** (public URL in memory). Transcription is server-side only.
+ * or Yes with voice: recording exists and **Storage upload finished** (public URL in memory).
  */
 function screeningDetailComplete(which) {
   if (getScreeningDetailMode(which) === 'text') {
@@ -982,12 +982,13 @@ function uploadMainSurveyQuestionAudio(questionIndex, blob) {
   return uploadParticipantAudio('main_q' + questionIndex, blob);
 }
 
+/** Storage upload only — same as `uploadParticipantAudio` with a screening slug. */
 function uploadEligibilityScreeningAudio(which3Or4, blob) {
   return uploadParticipantAudio('screening_q' + which3Or4, blob);
 }
 
 /**
- * Persist screening audio URL to `research_responses` (draft insert or update). Webhook transcribes in the background; client does not wait.
+ * Persist screening audio URL to `research_responses` (draft insert or update). Fire-and-forget from the upload pipeline; does not gate the UI.
  */
 async function persistScreeningDraftAudioUrl(which, publicUrl) {
   if (!supabaseClient) throw new Error('Supabase not initialized');
@@ -1020,12 +1021,11 @@ async function persistScreeningDraftAudioUrl(which, publicUrl) {
 }
 
 /**
- * Upload to Storage → unlock Proceed immediately → persist URL in background (no polling for transcription).
+ * Awaits only Supabase Storage upload → then Saved + Proceed. DB row update runs after, without blocking.
  */
 async function runScreeningVoiceUploadPipeline(which, blob) {
   if (!supabaseClient) throw new Error('Supabase not initialized');
 
-  updateScreeningProceedButton();
   setScreeningUploadStatus(which, 'uploading');
   var recordBtn = document.getElementById(eligibilityRecordButtonId(which));
   if (recordBtn) {
@@ -1065,11 +1065,10 @@ async function runScreeningVoiceUploadPipeline(which, blob) {
 
 /**
  * Validates (written XOR voice per question), saves `research_responses`.
- * Voice clips upload to Storage as soon as recording stops (main survey + screening); `trans_q*` / screening reason columns are filled by the server webhook.
- * Never call Edge Functions from the browser for transcription.
+ * Voice clips upload to Storage as soon as recording stops (main survey + screening); text columns may be filled server-side later.
  */
 async function submitSurvey(ev) {
-  // Upload + insert or update. Transcription is triggered by the database webhook, not the client.
+  // Final save: merge row; optional server jobs may run after save.
   ev.preventDefault();
 
   if (!supabaseClient) {
