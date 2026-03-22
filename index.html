@@ -437,6 +437,45 @@
       margin-top: 0.25em;
     }
 
+    .screening-proceed-wrap {
+      margin-top: 1.5rem;
+      padding-top: 1.35rem;
+      border-top: 1px solid #dde4ee;
+      text-align: center;
+    }
+
+    .screening-proceed-btn {
+      background: #081e3f;
+      color: #fff;
+      font-size: 1.05em;
+      padding: 0.75em 1.75em;
+      border-radius: 8px;
+      width: 100%;
+      max-width: 22rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+
+    .screening-proceed-btn:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+
+    .screening-proceed-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .screening-proceed-hint {
+      margin: 0.75rem 0 0 0;
+      font-size: 0.86rem;
+      color: #4a5a6e;
+      line-height: 1.45;
+      max-width: 28rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
     #screening-ineligible.screening-ineligible {
       display: none;
       box-sizing: border-box;
@@ -524,7 +563,9 @@
       }
     }
 
-    .record-btn.recording {
+    .record-btn.recording,
+    #record-screening-q3.record-btn.recording,
+    #record-screening-q4.record-btn.recording {
       background: #b71c1c !important;
       color: #fff !important;
       animation: pulse 2.25s ease-in-out infinite;
@@ -532,7 +573,9 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .record-btn.recording {
+      .record-btn.recording,
+      #record-screening-q3.record-btn.recording,
+      #record-screening-q4.record-btn.recording {
         animation: none;
         box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
       }
@@ -568,6 +611,9 @@
 
       <fieldset class="screening-question">
         <legend class="screening-question__legend">2. Have you engaged in regular exercise training for at least 10 years?</legend>
+        <p class="screening-hard-rule">
+          You must answer <strong>Yes</strong> to continue. If you answer <strong>No</strong>, you cannot take part in this study.
+        </p>
         <div class="screening-question__options">
           <label class="screening-option"><input type="radio" name="screen_ten_years" value="yes"> Yes</label>
           <label class="screening-option"><input type="radio" name="screen_ten_years" value="no"> No</label>
@@ -595,7 +641,7 @@
           </div>
           <div id="screening_q3_audio_panel" class="screening-detail-panel" hidden>
             <div class="screening-detail-audio-actions">
-              <button type="button" class="record-btn screening-record-btn" data-screening-q="3">Record answer</button>
+              <button type="button" id="record-screening-q3" class="record-btn screening-record-btn" data-screening-q="3" aria-label="Record voice answer for eligibility follow-up question 3">Record answer</button>
               <audio class="screening-audio-player" data-screening-q="3" controls style="display:none;"></audio>
             </div>
           </div>
@@ -623,7 +669,7 @@
           </div>
           <div id="screening_q4_audio_panel" class="screening-detail-panel" hidden>
             <div class="screening-detail-audio-actions">
-              <button type="button" class="record-btn screening-record-btn" data-screening-q="4">Record answer</button>
+              <button type="button" id="record-screening-q4" class="record-btn screening-record-btn" data-screening-q="4" aria-label="Record voice answer for eligibility follow-up question 4">Record answer</button>
               <audio class="screening-audio-player" data-screening-q="4" controls style="display:none;"></audio>
             </div>
           </div>
@@ -640,6 +686,15 @@
           <label class="screening-option"><input type="radio" name="screen_current_min" value="no"> No</label>
         </div>
       </fieldset>
+
+      <div class="screening-proceed-wrap" role="region" aria-label="Continue to main survey">
+        <button type="button" id="screening-proceed-btn" class="screening-proceed-btn" disabled aria-disabled="true">
+          Proceed to survey
+        </button>
+        <p class="screening-proceed-hint">
+          Complete all questions and any follow-ups (written or voice), then continue to the main survey.
+        </p>
+      </div>
     </div>
   </div>
 </div>
@@ -875,6 +930,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>

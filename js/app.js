@@ -21,6 +21,57 @@ let screeningCurrentRecorder = null;
 let screeningCurrentStream = null;
 let screeningCurrentWhich = null;
 
+/** Picks a MIME type supported by MediaRecorder (WebM in Chrome/Firefox; MP4/AAC on Safari). */
+function getBestSupportedAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return '';
+  }
+  var types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/aac',
+  ];
+  for (var i = 0; i < types.length; i++) {
+    if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+  }
+  return '';
+}
+
+/** Shared by main survey and eligibility screening — do not hard-code audio/webm only. */
+function createAudioMediaRecorder(stream) {
+  var mime = getBestSupportedAudioMimeType();
+  try {
+    if (mime) return new MediaRecorder(stream, { mimeType: mime });
+  } catch (e) {}
+  return new MediaRecorder(stream);
+}
+
+function buildAudioBlobFromChunks(chunks, recorder) {
+  var t = recorder && recorder.mimeType ? recorder.mimeType : 'audio/webm';
+  return new Blob(chunks, { type: t });
+}
+
+/** Same entry point main survey and screening use to start a MediaRecorder with a supported codec. */
+function startRecording(stream) {
+  return createAudioMediaRecorder(stream);
+}
+
+function fileExtensionForAudioBlob(blob) {
+  var t = blob.type || '';
+  if (t.indexOf('mp4') !== -1 || t.indexOf('aac') !== -1) return 'm4a';
+  if (t.indexOf('mpeg') !== -1) return 'mp3';
+  if (t.indexOf('ogg') !== -1) return 'ogg';
+  if (t.indexOf('webm') !== -1) return 'webm';
+  return 'webm';
+}
+
+function storageContentTypeForBlob(blob) {
+  if (blob.type && blob.type.indexOf('audio/') === 0) return blob.type;
+  return 'audio/webm';
+}
+
 /** Set when eligibility is passed; submitSurvey requires this so the main form cannot be sent without screening. */
 const SCREENING_PASS_STORAGE_KEY = 'research_survey_screening_passed';
 
@@ -208,18 +259,13 @@ function getScreeningValue(name) {
   return el ? el.value : null;
 }
 
-/** Q1 (age) or Q5 (current training volume): No is an absolute exclusion — no path to continue the study. */
-function screeningHardDisqualified() {
-  return (
-    getScreeningValue('screen_age') === 'no' || getScreeningValue('screen_current_min') === 'no'
-  );
-}
-
-function screeningFails() {
+/**
+ * Hard gates (Q1 age, Q2 10 years training, Q5 current volume): No → ineligible screen only.
+ * Q3/Q4 "Yes" is a soft gate (follow-up only) and does not disqualify.
+ */
+function screeningHardIneligible() {
   if (getScreeningValue('screen_age') === 'no') return true;
   if (getScreeningValue('screen_ten_years') === 'no') return true;
-  if (getScreeningValue('screen_noninjury_break') === 'yes') return true;
-  if (getScreeningValue('screen_pause_count') === 'yes') return true;
   if (getScreeningValue('screen_current_min') === 'no') return true;
   return false;
 }
@@ -231,8 +277,24 @@ function allScreeningAnswered() {
   return true;
 }
 
+/** True when user may click "Proceed to survey" (all radios, hard gates pass, soft follow-ups complete if needed). */
+function canProceedFromScreening() {
+  if (!allScreeningAnswered()) return false;
+  if (screeningHardIneligible()) return false;
+  if (!screeningDescribeValid()) return false;
+  return true;
+}
+
 function screeningPasses() {
-  return allScreeningAnswered() && !screeningFails();
+  return canProceedFromScreening();
+}
+
+function updateScreeningProceedButton() {
+  const btn = document.getElementById('screening-proceed-btn');
+  if (!btn) return;
+  const ok = canProceedFromScreening();
+  btn.disabled = !ok;
+  btn.setAttribute('aria-disabled', ok ? 'false' : 'true');
 }
 
 function getScreeningReasonText(id) {
@@ -280,14 +342,14 @@ function screeningAudioPlayerClear(which) {
 }
 
 function setScreeningRecordButtonIdle(which) {
-  const btn = document.querySelector('.screening-record-btn[data-screening-q="' + which + '"]');
+  const btn = document.getElementById('record-screening-q' + which);
   if (!btn) return;
   btn.classList.remove('recording');
   btn.textContent = 'Record answer';
 }
 
 function setScreeningRecordButtonActive(which) {
-  const btn = document.querySelector('.screening-record-btn[data-screening-q="' + which + '"]');
+  const btn = document.getElementById('record-screening-q' + which);
   if (!btn) return;
   btn.classList.add('recording');
   btn.textContent = 'Recording... Tap to Stop';
@@ -331,7 +393,7 @@ function syncScreeningDetailPanels(which) {
   }
 }
 
-/** When Q3 or Q4 is Yes, a written response or a recorded clip is required before exclusion can finalize. */
+/** When Q3 or Q4 is Yes, a written response or a recorded clip is required before "Proceed to survey" can be used. */
 function screeningDescribeValid() {
   if (getScreeningValue('screen_noninjury_break') === 'yes') {
     if (!screeningDetailComplete(3)) return false;
@@ -374,15 +436,11 @@ function syncScreeningDetailVisibility() {
 
 async function onScreeningChange() {
   syncScreeningDetailVisibility();
-  if (screeningFails()) {
-    /** Hard disqualifiers (Q1 or Q5 = No) must show ineligible immediately — do not wait for Q3/Q4 follow-ups. */
-    if (!screeningHardDisqualified() && !screeningDescribeValid()) return;
+  if (screeningHardIneligible()) {
     await showScreeningIneligible();
     return;
   }
-  if (screeningPasses()) {
-    showSurveyAfterScreening();
-  }
+  updateScreeningProceedButton();
 }
 
 async function buildScreeningRowExtras() {
@@ -492,55 +550,70 @@ function bindScreeningModeRadios() {
   });
 }
 
+/**
+ * Delegated clicks on #screening-phase so listeners work even when the audio panel is hidden at load.
+ * Uses the same startRecording / stopRecording pipeline as the main survey.
+ */
 function bindScreeningRecordButtons() {
-  [3, 4].forEach(function (which) {
-    const btn = document.querySelector('.screening-record-btn[data-screening-q="' + which + '"]');
+  const phase = document.getElementById('screening-phase');
+  if (!phase) return;
+  phase.addEventListener('click', function (e) {
+    const btn = e.target.closest('#record-screening-q3, #record-screening-q4');
     if (!btn) return;
-    btn.addEventListener('click', async function () {
-      if (getScreeningDetailMode(which) !== 'audio') return;
-      stopAllRecordings();
-      if (screeningCurrentRecorder && screeningCurrentWhich === which) {
-        screeningCurrentRecorder.stop();
-        stopScreeningRecording();
-        return;
-      }
-      setScreeningRecordButtonActive(which);
-      try {
-        screeningCurrentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const chunks = [];
-        const recorder = new MediaRecorder(screeningCurrentStream, { mimeType: 'audio/webm' });
-        screeningCurrentRecorder = recorder;
-        screeningCurrentWhich = which;
-        recorder.ondataavailable = function (e) {
-          if (e.data.size) chunks.push(e.data);
-        };
-        recorder.onstop = function () {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          screeningRecordedBlobs['sq' + which] = blob;
-          revokeScreeningPreview(which);
-          const objectUrl = URL.createObjectURL(blob);
-          screeningPreviewUrls['sq' + which] = objectUrl;
-          setScreeningPlayerUI(which, objectUrl);
-          onScreeningChange().catch(function (e) {
-            console.warn('[Screening]', e);
-          });
-        };
-        recorder.start();
-      } catch (err) {
-        console.error('[Screening recording]', err);
-        showError('Microphone permission needed to record. Please allow mic access.');
-        setScreeningRecordButtonIdle(which);
-        screeningCurrentRecorder = null;
-        screeningCurrentWhich = null;
-        if (screeningCurrentStream) {
-          screeningCurrentStream.getTracks().forEach(function (t) {
-            t.stop();
-          });
-          screeningCurrentStream = null;
-        }
+    if (btn.disabled) return;
+    const which = btn.id === 'record-screening-q3' ? 3 : btn.id === 'record-screening-q4' ? 4 : null;
+    if (which === null) return;
+    e.preventDefault();
+    handleScreeningRecordClick(which);
+  });
+}
+
+function handleScreeningRecordClick(which) {
+  if (getScreeningDetailMode(which) !== 'audio') return;
+  if (screeningCurrentRecorder && screeningCurrentWhich === which) {
+    screeningCurrentRecorder.stop();
+    stopScreeningRecording();
+    return;
+  }
+  stopRecording();
+  setScreeningRecordButtonActive(which);
+  navigator.mediaDevices
+    .getUserMedia({ audio: true })
+    .then(function (stream) {
+      screeningCurrentStream = stream;
+      const chunks = [];
+      const recorder = startRecording(stream);
+      screeningCurrentRecorder = recorder;
+      screeningCurrentWhich = which;
+      recorder.ondataavailable = function (e) {
+        if (e.data.size) chunks.push(e.data);
+      };
+      recorder.onstop = function () {
+        const blob = buildAudioBlobFromChunks(chunks, recorder);
+        screeningRecordedBlobs['sq' + which] = blob;
+        revokeScreeningPreview(which);
+        const objectUrl = URL.createObjectURL(blob);
+        screeningPreviewUrls['sq' + which] = objectUrl;
+        setScreeningPlayerUI(which, objectUrl);
+        onScreeningChange().catch(function (err) {
+          console.warn('[Screening]', err);
+        });
+      };
+      recorder.start();
+    })
+    .catch(function (err) {
+      console.error('[Screening recording]', err);
+      showError('Microphone permission needed to record. Please allow mic access.');
+      setScreeningRecordButtonIdle(which);
+      screeningCurrentRecorder = null;
+      screeningCurrentWhich = null;
+      if (screeningCurrentStream) {
+        screeningCurrentStream.getTracks().forEach(function (t) {
+          t.stop();
+        });
+        screeningCurrentStream = null;
       }
     });
-  });
 }
 
 function setPlayerUI(q, dataUrl) {
@@ -580,13 +653,19 @@ function stopAllRecordings() {
   stopScreeningRecording();
 }
 
+/** Stops main-survey and screening recorders; same entry point both UIs should use before starting a new clip. */
+function stopRecording() {
+  stopAllRecordings();
+}
+
 async function uploadAudioBlob(qnumber, blob) {
   const ts = Date.now();
   const nonce = Math.random().toString(36).slice(2, 10);
-  const filename = 'q' + qnumber + '_' + ts + '_' + nonce + '.webm';
+  const ext = fileExtensionForAudioBlob(blob);
+  const filename = 'q' + qnumber + '_' + ts + '_' + nonce + '.' + ext;
   const { error } = await supabaseClient.storage.from('voice-memos').upload(filename, blob, {
     upsert: false,
-    contentType: 'audio/webm',
+    contentType: storageContentTypeForBlob(blob),
   });
   if (error) {
     console.error('[Supabase storage] upload failed:', error, { bucket: 'voice-memos', filename });
@@ -599,10 +678,11 @@ async function uploadAudioBlob(qnumber, blob) {
 async function uploadScreeningAudioBlob(which, blob) {
   const ts = Date.now();
   const nonce = Math.random().toString(36).slice(2, 10);
-  const filename = 'screening_q' + which + '_' + ts + '_' + nonce + '.webm';
+  const ext = fileExtensionForAudioBlob(blob);
+  const filename = 'screening_q' + which + '_' + ts + '_' + nonce + '.' + ext;
   const { error } = await supabaseClient.storage.from('voice-memos').upload(filename, blob, {
     upsert: false,
-    contentType: 'audio/webm',
+    contentType: storageContentTypeForBlob(blob),
   });
   if (error) {
     console.error('[Supabase storage] screening upload failed:', error, { bucket: 'voice-memos', filename });
@@ -822,6 +902,15 @@ async function submitSurvey(ev) {
   submitBtn.textContent = submitLabelDefault;
 }
 
+function bindScreeningProceedButton() {
+  const btn = document.getElementById('screening-proceed-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    if (!canProceedFromScreening()) return;
+    showSurveyAfterScreening();
+  });
+}
+
 function bindRecordButtons() {
   for (let q = 1; q <= 5; q++) {
     (function (qNum) {
@@ -831,23 +920,23 @@ function bindRecordButtons() {
         if (getResponseMode(qNum) !== 'audio') return;
         if (currentRecorder && currentRecordingQ === qNum) {
           currentRecorder.stop();
-          stopAllRecordings();
+          stopRecording();
           return;
         }
-        stopAllRecordings();
+        stopRecording();
         setRecordButtonActive(qNum);
         applyRecordingLock(qNum, true);
         try {
           currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           const chunks = [];
-          const recorder = new MediaRecorder(currentStream, { mimeType: 'audio/webm' });
+          const recorder = startRecording(currentStream);
           currentRecorder = recorder;
           currentRecordingQ = qNum;
           recorder.ondataavailable = function (e) {
             if (e.data.size) chunks.push(e.data);
           };
           recorder.onstop = function () {
-            const blob = new Blob(chunks, { type: 'audio/webm' });
+            const blob = buildAudioBlobFromChunks(chunks, recorder);
             recordedBlobs['q' + qNum] = blob;
             revokeAudioPreview(qNum);
             const objectUrl = URL.createObjectURL(blob);
@@ -886,7 +975,9 @@ function boot() {
   bindScreeningDetailTextareas();
   bindScreeningModeRadios();
   bindScreeningRecordButtons();
+  bindScreeningProceedButton();
   syncScreeningDetailVisibility();
+  updateScreeningProceedButton();
   const form = document.getElementById('research-survey');
   if (form) {
     form.addEventListener('submit', submitSurvey);
