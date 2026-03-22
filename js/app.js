@@ -215,7 +215,7 @@ function setMainSurveyUploadStatus(q, kind) {
   }
 }
 
-/** Uploads to Storage only; UI unlocks as soon as `uploadParticipantAudio` resolves. */
+/** Uploads to Storage only; stores public URL on `mainSurveyUploadedAudioUrls[qNum]` for submitSurvey. */
 function runMainSurveyUploadAfterStop(qNum, blob) {
   if (!supabaseClient) {
     showError('Survey is not connected. Check Supabase settings in js/app.js.');
@@ -224,7 +224,7 @@ function runMainSurveyUploadAfterStop(qNum, blob) {
   setMainSurveyUploadStatus(qNum, 'uploading');
   uploadMainSurveyQuestionAudio(qNum, blob)
     .then(function (url) {
-      mainSurveyUploadedAudioUrls[qNum] = url;
+      mainSurveyUploadedAudioUrls[qNum] = String(url || '').trim();
       setMainSurveyUploadStatus(qNum, 'saved');
     })
     .catch(function (err) {
@@ -1164,14 +1164,7 @@ async function submitSurvey(ev) {
     return;
   }
 
-  let needsUpload = false;
-  for (let u = 1; u <= 5; u++) {
-    if (getResponseMode(u) === 'audio' && recordedBlobs['q' + u] && !mainSurveyUploadedAudioUrls[u]) {
-      needsUpload = true;
-      break;
-    }
-  }
-
+  /** Per-question public URLs for submit; must always be filled from cache or upload (never skip when cache is warm). */
   const qAudioUrls = { 1: '', 2: '', 3: '', 4: '', 5: '' };
 
   const submitLabelDefault = submitBtn.textContent;
@@ -1189,23 +1182,21 @@ async function submitSurvey(ev) {
     return;
   }
 
-  if (needsUpload) {
-    try {
-      for (let qUp = 1; qUp <= 5; qUp++) {
-        if (getResponseMode(qUp) === 'audio' && recordedBlobs['q' + qUp]) {
-          qAudioUrls[qUp] = mainSurveyUploadedAudioUrls[qUp]
-            ? mainSurveyUploadedAudioUrls[qUp]
-            : await uploadMainSurveyQuestionAudio(qUp, recordedBlobs['q' + qUp]);
-        }
+  try {
+    for (let qUp = 1; qUp <= 5; qUp++) {
+      if (getResponseMode(qUp) === 'audio' && recordedBlobs['q' + qUp]) {
+        qAudioUrls[qUp] = mainSurveyUploadedAudioUrls[qUp]
+          ? mainSurveyUploadedAudioUrls[qUp]
+          : await uploadMainSurveyQuestionAudio(qUp, recordedBlobs['q' + qUp]);
       }
-    } catch (err) {
-      console.error('[Supabase storage] upload exception:', err);
-      const msg = err && err.message ? err.message : String(err);
-      showError('Audio upload failed: ' + msg);
-      submitBtn.disabled = false;
-      submitBtn.textContent = submitLabelDefault;
-      return;
     }
+  } catch (err) {
+    console.error('[Supabase storage] upload exception:', err);
+    const msg = err && err.message ? err.message : String(err);
+    showError('Audio upload failed: ' + msg);
+    submitBtn.disabled = false;
+    submitBtn.textContent = submitLabelDefault;
+    return;
   }
 
   const t1 = getResponseMode(1) === 'text' ? getResponseText(1) : '';
@@ -1231,12 +1222,12 @@ async function submitSurvey(ev) {
     text_q3: t3,
     text_q4: t4,
     text_q5: t5,
-    q1_audio_url: qAudioUrls[1] || '',
-    q2_audio_url: qAudioUrls[2] || '',
-    q3_audio_url: qAudioUrls[3] || '',
-    q4_audio_url: qAudioUrls[4] || '',
-    q5_audio_url: qAudioUrls[5] || '',
     ...screeningExtras,
+    q1_audio_url: String(qAudioUrls[1] || mainSurveyUploadedAudioUrls[1] || '').trim(),
+    q2_audio_url: String(qAudioUrls[2] || mainSurveyUploadedAudioUrls[2] || '').trim(),
+    q3_audio_url: String(qAudioUrls[3] || mainSurveyUploadedAudioUrls[3] || '').trim(),
+    q4_audio_url: String(qAudioUrls[4] || mainSurveyUploadedAudioUrls[4] || '').trim(),
+    q5_audio_url: String(qAudioUrls[5] || mainSurveyUploadedAudioUrls[5] || '').trim(),
     submitted_at: new Date().toISOString(),
   });
 
