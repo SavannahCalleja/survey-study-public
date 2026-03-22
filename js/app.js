@@ -443,13 +443,44 @@ async function onScreeningChange() {
   updateScreeningProceedButton();
 }
 
+/**
+ * Eligibility → `research_responses` insert keys (must match Supabase column names).
+ *
+ * HTML radio `name`          → DB column
+ * screen_age                 → screening_age
+ * screen_ten_years           → screening_ten_years
+ * screen_noninjury_break     → screening_noninjury_break
+ * screen_pause_count         → screening_pause_count
+ * screen_current_min         → screening_current_min
+ * (when Q3 follow-up shown)  → screening_q3_detail_mode  ('text'|'audio'|'' )
+ * (when Q4 follow-up shown)  → screening_q4_detail_mode  ('text'|'audio'|'' )
+ *
+ * buildScreeningRowExtras() also sets:
+ * screening_q3_reason, screening_q4_reason  (from textarea ids screening_q3_reason, screening_q4_reason)
+ * screening_q3_audio_url, screening_q4_audio_url  (voice-memos public URLs)
+ */
+function getScreeningAnswersSnapshot() {
+  const q3FollowUp = getScreeningValue('screen_noninjury_break') === 'yes';
+  const q4FollowUp = getScreeningValue('screen_pause_count') === 'yes';
+  return {
+    screening_age: getScreeningValue('screen_age') || '',
+    screening_ten_years: getScreeningValue('screen_ten_years') || '',
+    screening_noninjury_break: getScreeningValue('screen_noninjury_break') || '',
+    screening_pause_count: getScreeningValue('screen_pause_count') || '',
+    screening_current_min: getScreeningValue('screen_current_min') || '',
+    screening_q3_detail_mode: q3FollowUp ? getScreeningDetailMode(3) : '',
+    screening_q4_detail_mode: q4FollowUp ? getScreeningDetailMode(4) : '',
+  };
+}
+
+/** @see getScreeningAnswersSnapshot — same keys merged with reasons + audio URLs. Used by persistScreeningScreenout + submitSurvey. */
 async function buildScreeningRowExtras() {
-  const out = {
+  const out = Object.assign(getScreeningAnswersSnapshot(), {
     screening_q3_reason: '',
     screening_q4_reason: '',
     screening_q3_audio_url: '',
     screening_q4_audio_url: '',
-  };
+  });
   if (getScreeningValue('screen_noninjury_break') === 'yes') {
     if (getScreeningDetailMode(3) === 'text') {
       out.screening_q3_reason = getScreeningReasonText('screening_q3_reason');
@@ -865,10 +896,7 @@ async function submitSurvey(ev) {
     audio_q3: audioUrls.audio_q3 || '',
     audio_q4: audioUrls.audio_q4 || '',
     audio_q5: audioUrls.audio_q5 || '',
-    screening_q3_reason: screeningExtras.screening_q3_reason,
-    screening_q4_reason: screeningExtras.screening_q4_reason,
-    screening_q3_audio_url: screeningExtras.screening_q3_audio_url,
-    screening_q4_audio_url: screeningExtras.screening_q4_audio_url,
+    ...screeningExtras,
     submitted_at: new Date().toISOString(),
   };
 
