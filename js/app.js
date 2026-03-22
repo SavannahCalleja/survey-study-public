@@ -346,12 +346,12 @@ function getEligibilityCheckResult() {
   const followUpReasons = [];
   if (q3Needed && !q3Ok) {
     followUpReasons.push(
-      'screening Q3 follow-up incomplete (screening_q3_detail_mode / screening_q3_reason or voice transcript)'
+      'screening Q3 follow-up incomplete (need screening_q3_reason text, or screening_q3_audio_url after upload)'
     );
   }
   if (q4Needed && !q4Ok) {
     followUpReasons.push(
-      'screening Q4 follow-up incomplete (screening_q4_detail_mode / screening_q4_reason or voice transcript)'
+      'screening Q4 follow-up incomplete (need screening_q4_reason text, or screening_q4_audio_url after upload)'
     );
   }
 
@@ -433,11 +433,13 @@ function clearScreeningDetail(which) {
     q3_reason = '';
     screeningQ3UploadedUrl = '';
     screeningQ3TranscriptionPending = false;
+    setScreeningUploadStatus(3, '');
   }
   if (which === 4) {
     q4_reason = '';
     screeningQ4UploadedUrl = '';
     screeningQ4TranscriptionPending = false;
+    setScreeningUploadStatus(4, '');
   }
 }
 
@@ -468,6 +470,18 @@ function screeningAudioPlayerClear(which) {
 
 function eligibilityRecordButtonId(which) {
   return which === 3 ? 'record-q3' : 'record-q4';
+}
+
+function setScreeningUploadStatus(which, message) {
+  var el = document.getElementById('screening_q' + which + '_upload_status');
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
 }
 
 function setScreeningRecordButtonIdle(which) {
@@ -535,11 +549,13 @@ function syncScreeningDetailPanels(which) {
       q3_reason = '';
       screeningQ3UploadedUrl = '';
       screeningQ3TranscriptionPending = false;
+      setScreeningUploadStatus(3, '');
     }
     if (which === 4) {
       q4_reason = '';
       screeningQ4UploadedUrl = '';
       screeningQ4TranscriptionPending = false;
+      setScreeningUploadStatus(4, '');
     }
     if (screeningCurrentWhich === which) stopScreeningRecording();
   } else {
@@ -548,19 +564,28 @@ function syncScreeningDetailPanels(which) {
   }
 }
 
+/**
+ * Follow-up complete when: main question is No (handled by caller), or Yes with text in textarea,
+ * or Yes with voice: **upload succeeded** (`screening_q*_audio_url` in memory) and/or transcript/textarea.
+ * Eligibility does not wait for webhook transcription once the public URL exists.
+ */
 function screeningDetailComplete(which) {
   if (getScreeningDetailMode(which) === 'text') {
     return !!getScreeningReasonText('screening_q' + which + '_reason');
   }
   if (which === 3) {
     if (!screeningRecordedBlobs.sq3) return false;
-    if (screeningQ3TranscriptionPending) return false;
-    return !!(q3_reason.trim() || getScreeningReasonText('screening_q3_reason').trim());
+    var hasUrl = !!(screeningQ3UploadedUrl && String(screeningQ3UploadedUrl).trim());
+    var hasText = !!(q3_reason.trim() || getScreeningReasonText('screening_q3_reason').trim());
+    if (screeningQ3TranscriptionPending && !hasUrl) return false;
+    return hasUrl || hasText;
   }
   if (which === 4) {
     if (!screeningRecordedBlobs.sq4) return false;
-    if (screeningQ4TranscriptionPending) return false;
-    return !!(q4_reason.trim() || getScreeningReasonText('screening_q4_reason').trim());
+    var hasUrl4 = !!(screeningQ4UploadedUrl && String(screeningQ4UploadedUrl).trim());
+    var hasText4 = !!(q4_reason.trim() || getScreeningReasonText('screening_q4_reason').trim());
+    if (screeningQ4TranscriptionPending && !hasUrl4) return false;
+    return hasUrl4 || hasText4;
   }
   return !!screeningRecordedBlobs['sq' + which];
 }
@@ -808,9 +833,11 @@ function handleScreeningRecordClick(which) {
           } else {
             screeningQ4TranscriptionPending = false;
           }
+          setScreeningUploadStatus(which, '');
           setScreeningRecordButtonIdle(which);
+          updateScreeningProceedButton();
           showError(
-            'Could not transcribe this recording. Please type your answer or try recording again.'
+            'Could not save or transcribe this recording. Please type your answer or try recording again.'
           );
           onScreeningChange().catch(function (e) {
             console.warn('[Screening]', e);
@@ -947,7 +974,13 @@ async function runScreeningVoiceWebhookPipeline(which, blob) {
     screeningQ4TranscriptionPending = true;
   }
   updateScreeningProceedButton();
-  setScreeningRecordButtonTranscribing(which);
+  setScreeningUploadStatus(which, 'Uploading…');
+  var recordBtn = document.getElementById(eligibilityRecordButtonId(which));
+  if (recordBtn) {
+    recordBtn.disabled = true;
+    recordBtn.classList.remove('recording', 'transcribing');
+    recordBtn.textContent = 'Uploading…';
+  }
 
   const publicUrl = await uploadEligibilityScreeningAudio(which, blob);
   if (which === 3) {
@@ -955,6 +988,10 @@ async function runScreeningVoiceWebhookPipeline(which, blob) {
   } else {
     screeningQ4UploadedUrl = publicUrl;
   }
+
+  setScreeningUploadStatus(which, '');
+  updateScreeningProceedButton();
+  setScreeningRecordButtonTranscribing(which);
 
   let rowId = null;
   try {
@@ -995,7 +1032,9 @@ async function runScreeningVoiceWebhookPipeline(which, blob) {
     const ta = document.getElementById('screening_q4_reason');
     if (ta) ta.value = text;
   }
+  setScreeningUploadStatus(which, '');
   setScreeningRecordButtonIdle(which);
+  updateScreeningProceedButton();
   onScreeningChange().catch(function (err) {
     console.warn('[Screening]', err);
   });

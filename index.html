@@ -466,6 +466,30 @@
       cursor: not-allowed;
     }
 
+    .screening-upload-status {
+      margin: 0.5rem 0 0 0;
+      font-size: 0.85rem;
+      color: #3d5a80;
+      min-height: 1.25em;
+    }
+    .screening-upload-status:not([hidden])::before {
+      content: '';
+      display: inline-block;
+      width: 0.85em;
+      height: 0.85em;
+      margin-right: 0.4em;
+      vertical-align: -0.1em;
+      border: 2px solid #c5d0e0;
+      border-top-color: #2a4a6e;
+      border-radius: 50%;
+      animation: screening-upload-spin 0.7s linear infinite;
+    }
+    @keyframes screening-upload-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     .screening-proceed-hint {
       margin: 0.75rem 0 0 0;
       font-size: 0.86rem;
@@ -653,6 +677,7 @@
               <button type="button" id="record-q3" class="record-btn screening-record-btn" data-screening-q="3" aria-label="Record voice answer for eligibility follow-up question 3">Record answer</button>
               <audio class="screening-audio-player" data-screening-q="3" controls style="display:none;"></audio>
             </div>
+            <p id="screening_q3_upload_status" class="screening-upload-status" hidden aria-live="polite"></p>
           </div>
         </div>
       </fieldset>
@@ -681,6 +706,7 @@
               <button type="button" id="record-q4" class="record-btn screening-record-btn" data-screening-q="4" aria-label="Record voice answer for eligibility follow-up question 4">Record answer</button>
               <audio class="screening-audio-player" data-screening-q="4" controls style="display:none;"></audio>
             </div>
+            <p id="screening_q4_upload_status" class="screening-upload-status" hidden aria-live="polite"></p>
           </div>
         </div>
       </fieldset>
@@ -939,6 +965,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=20"></script>
+<script src="js/app.js?v=21"></script>
 </body>
 </html>
