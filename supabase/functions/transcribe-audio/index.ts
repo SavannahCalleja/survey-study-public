@@ -88,13 +88,14 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceKey) {
+    /** Service role only — never use SUPABASE_ANON_KEY here; RLS would block row updates. */
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRoleKey) {
       console.error("[transcribe-audio] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing");
       return json({ error: "Server misconfiguration" }, 500);
     }
 
-    const supabase = createClient(supabaseUrl, serviceKey, {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -119,18 +120,24 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from("research_responses")
       .update(updates)
       .eq("id", idStr)
       .select("id");
 
     if (error) {
-      console.error(`[transcribe-audio] Supabase update failed row=${idStr}:`, error.message, error);
+      console.error("Update failed:", error);
       return json({ error: error.message }, 500);
     }
 
-    console.log(`[transcribe-audio] DB updated row=${idStr} columns=${Object.keys(updates).join(", ")}`);
+    if (!updatedRows || updatedRows.length === 0) {
+      const noRowErr = new Error(`No row updated for id=${idStr} (missing row or policy blocked write)`);
+      console.error("Update failed:", noRowErr);
+      return json({ error: noRowErr.message }, 500);
+    }
+
+    console.log("Update successful");
     return json({ ok: true, transcribed: Object.keys(updates) });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
