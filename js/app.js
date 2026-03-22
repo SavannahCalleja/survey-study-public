@@ -305,9 +305,76 @@ const SCREENING_NAMES = [
   'screen_current_min',
 ];
 
+/** HTML `name` on radios → `research_responses` / snapshot keys (for eligibility logging). */
+const SCREENING_HTML_TO_DB = {
+  screen_age: 'screening_age',
+  screen_ten_years: 'screening_ten_years',
+  screen_noninjury_break: 'screening_noninjury_break',
+  screen_pause_count: 'screening_pause_count',
+  screen_current_min: 'screening_current_min',
+};
+
 function getScreeningValue(name) {
   const el = document.querySelector('input[name="' + name + '"]:checked');
   return el ? el.value : null;
+}
+
+/**
+ * Structured eligibility state aligned with `getScreeningAnswersSnapshot()` keys (screening_age, …).
+ * Use for debugging and for enabling the Proceed button.
+ */
+function getEligibilityCheckResult() {
+  const snapshot = getScreeningAnswersSnapshot();
+  const unansweredDbKeys = [];
+  for (let i = 0; i < SCREENING_NAMES.length; i++) {
+    const htmlName = SCREENING_NAMES[i];
+    if (getScreeningValue(htmlName) === null) {
+      unansweredDbKeys.push(SCREENING_HTML_TO_DB[htmlName] || htmlName);
+    }
+  }
+
+  const hardReasons = [];
+  if (getScreeningValue('screen_age') === 'no') hardReasons.push('screening_age:no (hard ineligible)');
+  if (getScreeningValue('screen_ten_years') === 'no') hardReasons.push('screening_ten_years:no (hard ineligible)');
+  if (getScreeningValue('screen_current_min') === 'no') hardReasons.push('screening_current_min:no (hard ineligible)');
+
+  const q3Needed = getScreeningValue('screen_noninjury_break') === 'yes';
+  const q4Needed = getScreeningValue('screen_pause_count') === 'yes';
+  const q3Ok = !q3Needed || screeningDetailComplete(3);
+  const q4Ok = !q4Needed || screeningDetailComplete(4);
+
+  const followUpReasons = [];
+  if (q3Needed && !q3Ok) {
+    followUpReasons.push(
+      'screening Q3 follow-up incomplete (screening_q3_detail_mode / screening_q3_reason or voice transcript)'
+    );
+  }
+  if (q4Needed && !q4Ok) {
+    followUpReasons.push(
+      'screening Q4 follow-up incomplete (screening_q4_detail_mode / screening_q4_reason or voice transcript)'
+    );
+  }
+
+  const canProceed =
+    unansweredDbKeys.length === 0 && hardReasons.length === 0 && q3Ok && q4Ok;
+
+  return {
+    snapshot,
+    unansweredDbKeys,
+    hardIneligible: hardReasons.length > 0,
+    hardReasons,
+    screening_noninjury_break_yes_needs_q3: q3Needed,
+    screening_pause_count_yes_needs_q4: q4Needed,
+    q3FollowUpComplete: q3Ok,
+    q4FollowUpComplete: q4Ok,
+    followUpReasons,
+    canProceed,
+  };
+}
+
+/** Same as `getEligibilityCheckResult().canProceed` — all radios answered, hard gates pass, follow-ups done. */
+function isEligible() {
+  return getEligibilityCheckResult().canProceed;
 }
 
 /**
@@ -321,19 +388,9 @@ function screeningHardIneligible() {
   return false;
 }
 
-function allScreeningAnswered() {
-  for (let i = 0; i < SCREENING_NAMES.length; i++) {
-    if (getScreeningValue(SCREENING_NAMES[i]) === null) return false;
-  }
-  return true;
-}
-
 /** True when user may click "Proceed to survey" (all radios, hard gates pass, soft follow-ups complete if needed). */
 function canProceedFromScreening() {
-  if (!allScreeningAnswered()) return false;
-  if (screeningHardIneligible()) return false;
-  if (!screeningDescribeValid()) return false;
-  return true;
+  return getEligibilityCheckResult().canProceed;
 }
 
 function screeningPasses() {
@@ -343,9 +400,16 @@ function screeningPasses() {
 function updateScreeningProceedButton() {
   const btn = document.getElementById('screening-proceed-btn');
   if (!btn) return;
-  const ok = canProceedFromScreening();
-  btn.disabled = !ok;
-  btn.setAttribute('aria-disabled', ok ? 'false' : 'true');
+  const eligibilityResult = getEligibilityCheckResult();
+  console.log('Eligibility Check:', eligibilityResult);
+  const ok = eligibilityResult.canProceed;
+  if (ok) {
+    btn.removeAttribute('disabled');
+    btn.setAttribute('aria-disabled', 'false');
+  } else {
+    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+  }
 }
 
 function getScreeningReasonText(id) {
@@ -482,17 +546,6 @@ function syncScreeningDetailPanels(which) {
     const ta = document.getElementById('screening_q' + which + '_reason');
     if (ta) ta.value = '';
   }
-}
-
-/** When Q3 or Q4 is Yes, a written response or a recorded clip is required before "Proceed to survey" can be used. */
-function screeningDescribeValid() {
-  if (getScreeningValue('screen_noninjury_break') === 'yes') {
-    if (!screeningDetailComplete(3)) return false;
-  }
-  if (getScreeningValue('screen_pause_count') === 'yes') {
-    if (!screeningDetailComplete(4)) return false;
-  }
-  return true;
 }
 
 function screeningDetailComplete(which) {
