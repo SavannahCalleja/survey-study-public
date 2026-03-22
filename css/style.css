@@ -1,0 +1,255 @@
+/* ——— Eligibility screening (before main survey) ——— */
+#screening-phase.screening-phase {
+  box-sizing: border-box;
+  min-height: 100vh;
+  width: 100%;
+  padding: 2rem 1rem 3rem;
+  background: linear-gradient(165deg, #eef2f7 0%, #f5f6fa 45%, #e8ecf2 100%);
+}
+
+#screening-phase.is-hidden {
+  display: none;
+}
+
+.screening-phase__shell {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.screening-phase__card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #c5d0e0;
+  border-left: 5px solid #2a4a6e;
+  box-shadow: 0 8px 32px rgba(8, 30, 63, 0.08);
+  padding: 2rem 2rem 2.25rem;
+}
+
+.screening-phase__eyebrow {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5a6b82;
+}
+
+.screening-phase__title {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a2f4a;
+  line-height: 1.25;
+}
+
+.screening-phase__intro {
+  margin: 0 0 1.75rem 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #3d4f6e;
+}
+
+.screening-question {
+  margin: 0 0 1.35rem 0;
+  padding: 1rem 1rem 1.1rem;
+  border: 1px solid #dde4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.screening-question:last-of-type {
+  margin-bottom: 0;
+}
+
+.screening-question__legend {
+  padding: 0;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #081e3f;
+  line-height: 1.45;
+}
+
+.screening-question__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.screening-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #1a2f4a;
+  cursor: pointer;
+}
+
+.screening-option input {
+  width: auto;
+  margin: 0;
+  accent-color: #2a4a6e;
+}
+
+/* Optional detail fields (Q3 / Q4 when "Yes") — fade + slide */
+.screening-detail-wrap {
+  margin-top: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(-6px);
+  transition:
+    max-height 0.4s ease,
+    opacity 0.35s ease,
+    margin-top 0.35s ease,
+    transform 0.35s ease;
+  pointer-events: none;
+}
+
+.screening-detail-wrap.screening-detail-wrap--visible {
+  margin-top: 0.75rem;
+  max-height: 22rem;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.screening-detail-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a2f4a;
+  margin-bottom: 0.45em;
+  line-height: 1.4;
+}
+
+.screening-detail-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 4.5rem;
+  padding: 0.55em 0.65em;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  border: 1.5px solid #2a4a6e;
+  border-radius: 6px;
+  background: #fff;
+  color: #081e3f;
+  resize: vertical;
+}
+
+.screening-detail-textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(42, 74, 110, 0.25);
+}
+
+/* Ineligible — full view */
+#screening-ineligible.screening-ineligible {
+  display: none;
+  box-sizing: border-box;
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 2rem 1.5rem;
+  background-color: #f5f6fa;
+  color: #081e3f;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+#screening-ineligible.screening-ineligible.is-visible {
+  display: flex;
+}
+
+.screening-ineligible__inner {
+  max-width: 32rem;
+  text-align: center;
+}
+
+.screening-ineligible__text {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.6;
+  font-weight: 500;
+  color: #2c3d55;
+}
+
+/* Full-view success state — shown after successful submit (js/app.js) */
+#survey-container.is-hidden {
+  display: none;
+}
+
+#success-screen {
+  display: none;
+  box-sizing: border-box;
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 2rem 1.5rem;
+  background-color: #f5f6fa;
+  color: #081e3f;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+#success-screen.is-visible {
+  display: flex;
+}
+
+.success-screen__inner {
+  max-width: 36rem;
+  text-align: center;
+}
+
+.success-screen__title {
+  margin: 0 0 1rem 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  color: #081e3f;
+}
+
+.success-screen__note {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.55;
+  font-weight: 400;
+  color: #3d4f6e;
+}
+
+/* Recording state — toggled from js/app.js via .recording on .record-btn */
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(183, 28, 28, 0.45);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(183, 28, 28, 0);
+    filter: brightness(1.06);
+  }
+}
+
+.record-btn.recording {
+  background: #b71c1c !important;
+  color: #fff !important;
+  animation: pulse 2.25s ease-in-out infinite;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .record-btn.recording {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+  }
+}
+
+@media (max-width: 600px) {
+  .screening-phase__card {
+    padding: 1.35rem 1.1rem 1.5rem;
+  }
+}

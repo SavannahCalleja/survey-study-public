@@ -14,6 +14,16 @@ let currentRecordingQ = null;
 let currentStream = null;
 let currentRecorder = null;
 
+/** Screening Q3/Q4 detail: written or voice (same bucket as main survey). */
+const screeningRecordedBlobs = {};
+const screeningPreviewUrls = {};
+let screeningCurrentRecorder = null;
+let screeningCurrentStream = null;
+let screeningCurrentWhich = null;
+
+/** Set when eligibility is passed; submitSurvey requires this so the main form cannot be sent without screening. */
+const SCREENING_PASS_STORAGE_KEY = 'research_survey_screening_passed';
+
 function initSupabase() {
   if (!window.supabase || typeof window.supabase.createClient !== 'function') {
     console.error('[Supabase] @supabase/supabase-js not loaded before app.js');
@@ -139,20 +149,20 @@ function applyRecordingLock(activeQ, isRecording) {
 function setRecordButtonIdle(q) {
   const btn = document.querySelector('.record-btn[data-q="' + q + '"]');
   if (!btn) return;
-  btn.classList.remove('recording-active');
+  btn.classList.remove('recording');
   btn.textContent = 'Record answer';
 }
 
 function setRecordButtonActive(q) {
   const btn = document.querySelector('.record-btn[data-q="' + q + '"]');
   if (!btn) return;
-  btn.classList.add('recording-active');
+  btn.classList.add('recording');
   btn.textContent = 'Recording... Tap to Stop';
 }
 
 function resetAllRecordButtons() {
   document.querySelectorAll('.record-btn').forEach(function (b) {
-    b.classList.remove('recording-active');
+    b.classList.remove('recording');
     b.textContent = 'Record answer';
   });
   applyRecordingLock(null, false);
@@ -168,14 +178,368 @@ function showError(msg) {
   }, 7000);
 }
 
-function showSuccess(msg) {
-  const el = document.getElementById('feedback');
-  if (!el) return;
-  el.innerText = msg;
-  el.style.display = 'block';
-  setTimeout(function () {
-    el.style.display = 'none';
-  }, 7000);
+/** Hides the survey and shows the full-view thank-you screen (see index.html, css/style.css). */
+function showSubmissionSuccessView() {
+  try {
+    sessionStorage.removeItem(SCREENING_PASS_STORAGE_KEY);
+  } catch (e) {}
+  const survey = document.getElementById('survey-container');
+  const success = document.getElementById('success-screen');
+  const phase = document.getElementById('screening-phase');
+  const ineligible = document.getElementById('screening-ineligible');
+  if (survey) survey.classList.add('is-hidden');
+  if (success) success.classList.add('is-visible');
+  if (phase) phase.classList.add('is-hidden');
+  if (ineligible) ineligible.classList.remove('is-visible');
+  window.scrollTo(0, 0);
+}
+
+const SCREENING_NAMES = [
+  'screen_age',
+  'screen_ten_years',
+  'screen_noninjury_break',
+  'screen_pause_count',
+  'screen_current_min',
+];
+
+function getScreeningValue(name) {
+  const el = document.querySelector('input[name="' + name + '"]:checked');
+  return el ? el.value : null;
+}
+
+/** Q1 (age) or Q5 (current training volume): No is an absolute exclusion — no path to continue the study. */
+function screeningHardDisqualified() {
+  return (
+    getScreeningValue('screen_age') === 'no' || getScreeningValue('screen_current_min') === 'no'
+  );
+}
+
+function screeningFails() {
+  if (getScreeningValue('screen_age') === 'no') return true;
+  if (getScreeningValue('screen_ten_years') === 'no') return true;
+  if (getScreeningValue('screen_noninjury_break') === 'yes') return true;
+  if (getScreeningValue('screen_pause_count') === 'yes') return true;
+  if (getScreeningValue('screen_current_min') === 'no') return true;
+  return false;
+}
+
+function allScreeningAnswered() {
+  for (let i = 0; i < SCREENING_NAMES.length; i++) {
+    if (getScreeningValue(SCREENING_NAMES[i]) === null) return false;
+  }
+  return true;
+}
+
+function screeningPasses() {
+  return allScreeningAnswered() && !screeningFails();
+}
+
+function getScreeningReasonText(id) {
+  const el = document.getElementById(id);
+  return el && el.value ? String(el.value).trim() : '';
+}
+
+function getScreeningDetailMode(which) {
+  const el = document.querySelector('input[name="screening_detail_mode_q' + which + '"]:checked');
+  return el ? el.value : 'text';
+}
+
+function clearScreeningDetail(which) {
+  const ta = document.getElementById('screening_q' + which + '_reason');
+  if (ta) ta.value = '';
+  delete screeningRecordedBlobs['sq' + which];
+  revokeScreeningPreview(which);
+  screeningAudioPlayerClear(which);
+  setScreeningRecordButtonIdle(which);
+}
+
+function revokeScreeningPreview(which) {
+  const key = 'sq' + which;
+  if (screeningPreviewUrls[key]) {
+    URL.revokeObjectURL(screeningPreviewUrls[key]);
+    delete screeningPreviewUrls[key];
+  }
+}
+
+function setScreeningPlayerUI(which, dataUrl) {
+  const audio = document.querySelector('.screening-audio-player[data-screening-q="' + which + '"]');
+  if (dataUrl && audio) {
+    audio.src = dataUrl;
+    audio.style.display = 'inline';
+  }
+}
+
+function screeningAudioPlayerClear(which) {
+  const a = document.querySelector('.screening-audio-player[data-screening-q="' + which + '"]');
+  if (a) {
+    a.pause();
+    a.src = '';
+    a.style.display = 'none';
+  }
+}
+
+function setScreeningRecordButtonIdle(which) {
+  const btn = document.querySelector('.screening-record-btn[data-screening-q="' + which + '"]');
+  if (!btn) return;
+  btn.classList.remove('recording');
+  btn.textContent = 'Record answer';
+}
+
+function setScreeningRecordButtonActive(which) {
+  const btn = document.querySelector('.screening-record-btn[data-screening-q="' + which + '"]');
+  if (!btn) return;
+  btn.classList.add('recording');
+  btn.textContent = 'Recording... Tap to Stop';
+}
+
+function stopScreeningRecording() {
+  if (screeningCurrentRecorder) {
+    try {
+      screeningCurrentRecorder.stop();
+    } catch (e) {}
+    screeningCurrentRecorder = null;
+  }
+  if (screeningCurrentStream) {
+    screeningCurrentStream.getTracks().forEach(function (t) {
+      t.stop();
+    });
+    screeningCurrentStream = null;
+  }
+  if (screeningCurrentWhich !== null) {
+    setScreeningRecordButtonIdle(screeningCurrentWhich);
+    screeningCurrentWhich = null;
+  }
+}
+
+function syncScreeningDetailPanels(which) {
+  const mode = getScreeningDetailMode(which);
+  const textPanel = document.getElementById('screening_q' + which + '_text_panel');
+  const audioPanel = document.getElementById('screening_q' + which + '_audio_panel');
+  if (!textPanel || !audioPanel) return;
+  const isText = mode === 'text';
+  textPanel.hidden = !isText;
+  audioPanel.hidden = isText;
+  if (isText) {
+    delete screeningRecordedBlobs['sq' + which];
+    revokeScreeningPreview(which);
+    screeningAudioPlayerClear(which);
+    if (screeningCurrentWhich === which) stopScreeningRecording();
+  } else {
+    const ta = document.getElementById('screening_q' + which + '_reason');
+    if (ta) ta.value = '';
+  }
+}
+
+/** When Q3 or Q4 is Yes, a written response or a recorded clip is required before exclusion can finalize. */
+function screeningDescribeValid() {
+  if (getScreeningValue('screen_noninjury_break') === 'yes') {
+    if (!screeningDetailComplete(3)) return false;
+  }
+  if (getScreeningValue('screen_pause_count') === 'yes') {
+    if (!screeningDetailComplete(4)) return false;
+  }
+  return true;
+}
+
+function screeningDetailComplete(which) {
+  if (getScreeningDetailMode(which) === 'text') {
+    return !!getScreeningReasonText('screening_q' + which + '_reason');
+  }
+  return !!screeningRecordedBlobs['sq' + which];
+}
+
+function syncScreeningDetailVisibility() {
+  const w3 = document.getElementById('screening_q3_detail_wrap');
+  const w4 = document.getElementById('screening_q4_detail_wrap');
+  const show3 = getScreeningValue('screen_noninjury_break') === 'yes';
+  const show4 = getScreeningValue('screen_pause_count') === 'yes';
+  if (w3) w3.classList.toggle('screening-detail-wrap--visible', show3);
+  if (w4) w4.classList.toggle('screening-detail-wrap--visible', show4);
+  if (!show3) {
+    clearScreeningDetail(3);
+    document.querySelectorAll('input[name="screening_detail_mode_q3"]').forEach(function (r) {
+      r.checked = r.value === 'text';
+    });
+  }
+  if (!show4) {
+    clearScreeningDetail(4);
+    document.querySelectorAll('input[name="screening_detail_mode_q4"]').forEach(function (r) {
+      r.checked = r.value === 'text';
+    });
+  }
+  if (show3) syncScreeningDetailPanels(3);
+  if (show4) syncScreeningDetailPanels(4);
+}
+
+async function onScreeningChange() {
+  syncScreeningDetailVisibility();
+  if (screeningFails()) {
+    /** Hard disqualifiers (Q1 or Q5 = No) must show ineligible immediately — do not wait for Q3/Q4 follow-ups. */
+    if (!screeningHardDisqualified() && !screeningDescribeValid()) return;
+    await showScreeningIneligible();
+    return;
+  }
+  if (screeningPasses()) {
+    showSurveyAfterScreening();
+  }
+}
+
+async function buildScreeningRowExtras() {
+  const out = {
+    screening_q3_reason: '',
+    screening_q4_reason: '',
+    screening_q3_audio_url: '',
+    screening_q4_audio_url: '',
+  };
+  if (getScreeningValue('screen_noninjury_break') === 'yes') {
+    if (getScreeningDetailMode(3) === 'text') {
+      out.screening_q3_reason = getScreeningReasonText('screening_q3_reason');
+    } else if (screeningRecordedBlobs.sq3) {
+      out.screening_q3_audio_url = await uploadScreeningAudioBlob(3, screeningRecordedBlobs.sq3);
+    }
+  }
+  if (getScreeningValue('screen_pause_count') === 'yes') {
+    if (getScreeningDetailMode(4) === 'text') {
+      out.screening_q4_reason = getScreeningReasonText('screening_q4_reason');
+    } else if (screeningRecordedBlobs.sq4) {
+      out.screening_q4_audio_url = await uploadScreeningAudioBlob(4, screeningRecordedBlobs.sq4);
+    }
+  }
+  return out;
+}
+
+/** Saves screening responses when participant is excluded (add columns in Supabase if needed). */
+async function persistScreeningScreenout() {
+  if (!supabaseClient) return;
+  try {
+    const extras = await buildScreeningRowExtras();
+    const row = Object.assign({}, extras, {
+      submitted_at: new Date().toISOString(),
+    });
+    const { error } = await supabaseClient.from('research_responses').insert([row]);
+    if (error) {
+      console.warn('[Screening] Could not save screening data (add columns or relax NOT NULL):', error.message);
+    }
+  } catch (e) {
+    console.warn('[Screening] persistScreeningScreenout:', e);
+  }
+}
+
+async function showScreeningIneligible() {
+  try {
+    sessionStorage.removeItem(SCREENING_PASS_STORAGE_KEY);
+  } catch (e) {}
+  const phase = document.getElementById('screening-phase');
+  const survey = document.getElementById('survey-container');
+  const bad = document.getElementById('screening-ineligible');
+  if (phase) phase.classList.add('is-hidden');
+  if (survey) survey.classList.add('is-hidden');
+  if (bad) bad.classList.add('is-visible');
+  await persistScreeningScreenout();
+  window.scrollTo(0, 0);
+}
+
+function showSurveyAfterScreening() {
+  try {
+    sessionStorage.setItem(SCREENING_PASS_STORAGE_KEY, '1');
+  } catch (e) {}
+  const phase = document.getElementById('screening-phase');
+  const survey = document.getElementById('survey-container');
+  const bad = document.getElementById('screening-ineligible');
+  if (phase) phase.classList.add('is-hidden');
+  if (survey) survey.classList.remove('is-hidden');
+  if (bad) bad.classList.remove('is-visible');
+  window.scrollTo(0, 0);
+}
+
+function bindScreeningRadios() {
+  SCREENING_NAMES.forEach(function (name) {
+    document.querySelectorAll('input[name="' + name + '"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        onScreeningChange().catch(function (e) {
+          console.warn('[Screening]', e);
+        });
+      });
+    });
+  });
+}
+
+function bindScreeningDetailTextareas() {
+  ['screening_q3_reason', 'screening_q4_reason'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', function () {
+        onScreeningChange().catch(function (e) {
+          console.warn('[Screening]', e);
+        });
+      });
+    }
+  });
+}
+
+function bindScreeningModeRadios() {
+  [3, 4].forEach(function (which) {
+    document.querySelectorAll('input[name="screening_detail_mode_q' + which + '"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        if (!radio.checked) return;
+        syncScreeningDetailPanels(which);
+        onScreeningChange().catch(function (e) {
+          console.warn('[Screening]', e);
+        });
+      });
+    });
+  });
+}
+
+function bindScreeningRecordButtons() {
+  [3, 4].forEach(function (which) {
+    const btn = document.querySelector('.screening-record-btn[data-screening-q="' + which + '"]');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (getScreeningDetailMode(which) !== 'audio') return;
+      stopAllRecordings();
+      if (screeningCurrentRecorder && screeningCurrentWhich === which) {
+        screeningCurrentRecorder.stop();
+        stopScreeningRecording();
+        return;
+      }
+      setScreeningRecordButtonActive(which);
+      try {
+        screeningCurrentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const chunks = [];
+        const recorder = new MediaRecorder(screeningCurrentStream, { mimeType: 'audio/webm' });
+        screeningCurrentRecorder = recorder;
+        screeningCurrentWhich = which;
+        recorder.ondataavailable = function (e) {
+          if (e.data.size) chunks.push(e.data);
+        };
+        recorder.onstop = function () {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          screeningRecordedBlobs['sq' + which] = blob;
+          revokeScreeningPreview(which);
+          const objectUrl = URL.createObjectURL(blob);
+          screeningPreviewUrls['sq' + which] = objectUrl;
+          setScreeningPlayerUI(which, objectUrl);
+          onScreeningChange().catch(function (e) {
+            console.warn('[Screening]', e);
+          });
+        };
+        recorder.start();
+      } catch (err) {
+        console.error('[Screening recording]', err);
+        showError('Microphone permission needed to record. Please allow mic access.');
+        setScreeningRecordButtonIdle(which);
+        screeningCurrentRecorder = null;
+        screeningCurrentWhich = null;
+        if (screeningCurrentStream) {
+          screeningCurrentStream.getTracks().forEach(function (t) {
+            t.stop();
+          });
+          screeningCurrentStream = null;
+        }
+      }
+    });
+  });
 }
 
 function setPlayerUI(q, dataUrl) {
@@ -212,6 +576,7 @@ function stopAllRecordings() {
     applyRecordingLock(null, false);
     currentRecordingQ = null;
   }
+  stopScreeningRecording();
 }
 
 async function uploadAudioBlob(qnumber, blob) {
@@ -230,6 +595,22 @@ async function uploadAudioBlob(qnumber, blob) {
   return urlData.publicUrl;
 }
 
+async function uploadScreeningAudioBlob(which, blob) {
+  const ts = Date.now();
+  const nonce = Math.random().toString(36).slice(2, 10);
+  const filename = 'screening_q' + which + '_' + ts + '_' + nonce + '.webm';
+  const { error } = await supabaseClient.storage.from('voice-memos').upload(filename, blob, {
+    upsert: false,
+    contentType: 'audio/webm',
+  });
+  if (error) {
+    console.error('[Supabase storage] screening upload failed:', error, { bucket: 'voice-memos', filename });
+    throw error;
+  }
+  const { data: urlData } = supabaseClient.storage.from('voice-memos').getPublicUrl(filename);
+  return urlData.publicUrl;
+}
+
 /**
  * Validates (written XOR voice per question), uploads to `voice-memos`, inserts into `research_responses`.
  * text_q* / trans_q* for written answers; for voice, trans_* starts empty until the DB webhook runs the Edge Function.
@@ -241,6 +622,15 @@ async function submitSurvey(ev) {
 
   if (!supabaseClient) {
     showError('Survey is not connected. Check Supabase settings in js/app.js.');
+    return;
+  }
+
+  let screeningPassed = false;
+  try {
+    screeningPassed = sessionStorage.getItem(SCREENING_PASS_STORAGE_KEY) === '1';
+  } catch (e) {}
+  if (!screeningPassed) {
+    showError('You must complete the eligibility screening and qualify before you can submit this survey.');
     return;
   }
 
@@ -332,6 +722,18 @@ async function submitSurvey(ev) {
   const submitLabelDefault = submitBtn.textContent;
   submitBtn.textContent = 'Submitting…';
 
+  let screeningExtras;
+  try {
+    screeningExtras = await buildScreeningRowExtras();
+  } catch (err) {
+    console.error('[Screening] upload failed:', err);
+    const msg = err && err.message ? err.message : String(err);
+    showError('Could not upload screening audio: ' + msg);
+    submitBtn.disabled = false;
+    submitBtn.textContent = submitLabelDefault;
+    return;
+  }
+
   if (needsUpload) {
     try {
       for (let qUp = 1; qUp <= 5; qUp++) {
@@ -382,6 +784,10 @@ async function submitSurvey(ev) {
     audio_q3: audioUrls.audio_q3 || '',
     audio_q4: audioUrls.audio_q4 || '',
     audio_q5: audioUrls.audio_q5 || '',
+    screening_q3_reason: screeningExtras.screening_q3_reason,
+    screening_q4_reason: screeningExtras.screening_q4_reason,
+    screening_q3_audio_url: screeningExtras.screening_q3_audio_url,
+    screening_q4_audio_url: screeningExtras.screening_q4_audio_url,
     submitted_at: new Date().toISOString(),
   };
 
@@ -403,7 +809,7 @@ async function submitSurvey(ev) {
   for (let rq = 1; rq <= 5; rq++) revokeAudioPreview(rq);
   resetAllRecordButtons();
   for (let cq = 1; cq <= 5; cq++) delete recordedBlobs['q' + cq];
-  showSuccess('Thank you! Your survey has been submitted.');
+  showSubmissionSuccessView();
   document.getElementById('research-survey').reset();
   syncPrimaryModalityOtherUI();
   initResponseModes();
@@ -469,6 +875,17 @@ function bindRecordButtons() {
 
 function boot() {
   initSupabase();
+  const screeningPhaseEl = document.getElementById('screening-phase');
+  if (screeningPhaseEl && !screeningPhaseEl.classList.contains('is-hidden')) {
+    try {
+      sessionStorage.removeItem(SCREENING_PASS_STORAGE_KEY);
+    } catch (e) {}
+  }
+  bindScreeningRadios();
+  bindScreeningDetailTextareas();
+  bindScreeningModeRadios();
+  bindScreeningRecordButtons();
+  syncScreeningDetailVisibility();
   const form = document.getElementById('research-survey');
   if (form) {
     form.addEventListener('submit', submitSurvey);

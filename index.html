@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <link rel="stylesheet" href="css/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Research Study</title>
   <!-- FIU Colors CSS -->
   <style>
@@ -250,13 +250,413 @@
         padding: 1em 0.3em;
       }
     }
+
+    /* Inlined from css/style.css — no extra request; works with file:// and any local server */
+    #screening-phase.screening-phase {
+      box-sizing: border-box;
+      min-height: 100vh;
+      width: 100%;
+      padding: 2rem 1rem 3rem;
+      background: linear-gradient(165deg, #eef2f7 0%, #f5f6fa 45%, #e8ecf2 100%);
+    }
+
+    #screening-phase.is-hidden {
+      display: none;
+    }
+
+    .screening-phase__shell {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .screening-phase__card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #c5d0e0;
+      border-left: 5px solid #2a4a6e;
+      box-shadow: 0 8px 32px rgba(8, 30, 63, 0.08);
+      padding: 2rem 2rem 2.25rem;
+    }
+
+    .screening-phase__eyebrow {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #5a6b82;
+    }
+
+    .screening-phase__title {
+      margin: 0 0 0.75rem 0;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1a2f4a;
+      line-height: 1.25;
+    }
+
+    .screening-phase__intro {
+      margin: 0 0 1.75rem 0;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      color: #3d4f6e;
+    }
+
+    .screening-question {
+      margin: 0 0 1.35rem 0;
+      padding: 1rem 1rem 1.1rem;
+      border: 1px solid #dde4ee;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .screening-question:last-of-type {
+      margin-bottom: 0;
+    }
+
+    .screening-question__legend {
+      padding: 0;
+      margin: 0 0 0.75rem 0;
+      font-size: 0.98rem;
+      font-weight: 600;
+      color: #081e3f;
+      line-height: 1.45;
+    }
+
+    .screening-hard-rule {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #3d4f66;
+      margin: -0.35rem 0 0.65rem 0;
+      line-height: 1.45;
+    }
+
+    .screening-question__options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.5rem;
+    }
+
+    .screening-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #1a2f4a;
+      cursor: pointer;
+    }
+
+    .screening-option input {
+      width: auto;
+      margin: 0;
+      accent-color: #2a4a6e;
+    }
+
+    .screening-detail-wrap {
+      margin-top: 0;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transform: translateY(-6px);
+      transition:
+        max-height 0.4s ease,
+        opacity 0.35s ease,
+        margin-top 0.35s ease,
+        transform 0.35s ease;
+      pointer-events: none;
+    }
+
+    .screening-detail-wrap.screening-detail-wrap--visible {
+      margin-top: 0.75rem;
+      max-height: 22rem;
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .screening-detail-label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #1a2f4a;
+      margin-bottom: 0.45em;
+      line-height: 1.4;
+    }
+
+    .screening-detail-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 4.5rem;
+      padding: 0.55em 0.65em;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      border: 1.5px solid #2a4a6e;
+      border-radius: 6px;
+      background: #fff;
+      color: #081e3f;
+      resize: vertical;
+    }
+
+    .screening-detail-textarea:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(42, 74, 110, 0.25);
+    }
+
+    .screening-detail-mode-fieldset {
+      border: none;
+      margin: 0 0 0.65rem 0;
+      padding: 0;
+    }
+
+    .screening-detail-mode-legend {
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: #1a2f4a;
+      margin-bottom: 0.4rem;
+      padding: 0;
+    }
+
+    .screening-detail-panel {
+      margin-top: 0.35rem;
+    }
+
+    .screening-detail-sublabel {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #3d4f6e;
+      display: block;
+      margin-bottom: 0.35em;
+    }
+
+    .screening-detail-audio-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      margin-top: 0.25em;
+    }
+
+    #screening-ineligible.screening-ineligible {
+      display: none;
+      box-sizing: border-box;
+      min-height: 100vh;
+      width: 100%;
+      margin: 0;
+      padding: 2rem 1.5rem;
+      background-color: #f5f6fa;
+      color: #081e3f;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #screening-ineligible.screening-ineligible.is-visible {
+      display: flex;
+    }
+
+    .screening-ineligible__inner {
+      max-width: 32rem;
+      text-align: center;
+    }
+
+    .screening-ineligible__text {
+      margin: 0;
+      font-size: 1.15rem;
+      line-height: 1.6;
+      font-weight: 500;
+      color: #2c3d55;
+    }
+
+    #survey-container.is-hidden {
+      display: none;
+    }
+
+    #success-screen {
+      display: none;
+      box-sizing: border-box;
+      min-height: 100vh;
+      width: 100%;
+      margin: 0;
+      padding: 2rem 1.5rem;
+      background-color: #f5f6fa;
+      color: #081e3f;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #success-screen.is-visible {
+      display: flex;
+    }
+
+    .success-screen__inner {
+      max-width: 36rem;
+      text-align: center;
+    }
+
+    .success-screen__title {
+      margin: 0 0 1rem 0;
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+      color: #081e3f;
+    }
+
+    .success-screen__note {
+      margin: 0;
+      font-size: 1.125rem;
+      line-height: 1.55;
+      font-weight: 400;
+      color: #3d4f6e;
+    }
+
+    @keyframes pulse {
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(183, 28, 28, 0.45);
+        filter: brightness(1);
+      }
+      50% {
+        box-shadow: 0 0 0 10px rgba(183, 28, 28, 0);
+        filter: brightness(1.06);
+      }
+    }
+
+    .record-btn.recording {
+      background: #b71c1c !important;
+      color: #fff !important;
+      animation: pulse 2.25s ease-in-out infinite;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .record-btn.recording {
+        animation: none;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+      }
+    }
+
+    @media (max-width: 600px) {
+      .screening-phase__card {
+        padding: 1.35rem 1.1rem 1.5rem;
+      }
+    }
   </style>
 </head>
 <body>
+<div id="screening-phase" class="screening-phase">
+  <div class="screening-phase__shell">
+    <div class="screening-phase__card">
+      <p class="screening-phase__eyebrow">Step 1 of 2</p>
+      <h2 class="screening-phase__title">Eligibility screening</h2>
+      <p class="screening-phase__intro">
+        Please answer each question honestly. Your responses determine whether you may continue to the main survey. This section uses different criteria than the questions that follow.
+      </p>
+
+      <fieldset class="screening-question">
+        <legend class="screening-question__legend">1. Are you between 18 and 85 years of age?</legend>
+        <p class="screening-hard-rule">
+          You must answer <strong>Yes</strong> to continue. If you answer <strong>No</strong>, you cannot take part in this study.
+        </p>
+        <div class="screening-question__options">
+          <label class="screening-option"><input type="radio" name="screen_age" value="yes"> Yes</label>
+          <label class="screening-option"><input type="radio" name="screen_age" value="no"> No</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="screening-question">
+        <legend class="screening-question__legend">2. Have you engaged in regular exercise training for at least 10 years?</legend>
+        <div class="screening-question__options">
+          <label class="screening-option"><input type="radio" name="screen_ten_years" value="yes"> Yes</label>
+          <label class="screening-option"><input type="radio" name="screen_ten_years" value="no"> No</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="screening-question">
+        <legend class="screening-question__legend">3. In the last 10 years, have you had any continuous break from training longer than 3 months for reasons <em>other than</em> injury?</legend>
+        <div class="screening-question__options">
+          <label class="screening-option"><input type="radio" name="screen_noninjury_break" value="yes"> Yes</label>
+          <label class="screening-option"><input type="radio" name="screen_noninjury_break" value="no"> No</label>
+        </div>
+        <div id="screening_q3_detail_wrap" class="screening-detail-wrap" aria-live="polite">
+          <p class="screening-detail-label">Please briefly describe the reason for this break or these pauses.</p>
+          <fieldset class="screening-detail-mode-fieldset">
+            <legend class="screening-detail-mode-legend">Response format (choose one)</legend>
+            <div class="screening-question__options">
+              <label class="screening-option"><input type="radio" name="screening_detail_mode_q3" value="text" checked> Written response</label>
+              <label class="screening-option"><input type="radio" name="screening_detail_mode_q3" value="audio"> Voice recording</label>
+            </div>
+          </fieldset>
+          <div id="screening_q3_text_panel" class="screening-detail-panel">
+            <label for="screening_q3_reason" class="screening-detail-sublabel">Your response</label>
+            <textarea id="screening_q3_reason" name="screening_q3_reason" rows="3" class="screening-detail-textarea" spellcheck="true" autocomplete="off"></textarea>
+          </div>
+          <div id="screening_q3_audio_panel" class="screening-detail-panel" hidden>
+            <div class="screening-detail-audio-actions">
+              <button type="button" class="record-btn screening-record-btn" data-screening-q="3">Record answer</button>
+              <audio class="screening-audio-player" data-screening-q="3" controls style="display:none;"></audio>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="screening-question">
+        <legend class="screening-question__legend">4. Over the last 10 years, have you had more than 5 pauses in training lasting 3 months or more (including for injuries)?</legend>
+        <div class="screening-question__options">
+          <label class="screening-option"><input type="radio" name="screen_pause_count" value="yes"> Yes</label>
+          <label class="screening-option"><input type="radio" name="screen_pause_count" value="no"> No</label>
+        </div>
+        <div id="screening_q4_detail_wrap" class="screening-detail-wrap" aria-live="polite">
+          <p class="screening-detail-label">Please briefly describe the reason for this break or these pauses.</p>
+          <fieldset class="screening-detail-mode-fieldset">
+            <legend class="screening-detail-mode-legend">Response format (choose one)</legend>
+            <div class="screening-question__options">
+              <label class="screening-option"><input type="radio" name="screening_detail_mode_q4" value="text" checked> Written response</label>
+              <label class="screening-option"><input type="radio" name="screening_detail_mode_q4" value="audio"> Voice recording</label>
+            </div>
+          </fieldset>
+          <div id="screening_q4_text_panel" class="screening-detail-panel">
+            <label for="screening_q4_reason" class="screening-detail-sublabel">Your response</label>
+            <textarea id="screening_q4_reason" name="screening_q4_reason" rows="3" class="screening-detail-textarea" spellcheck="true" autocomplete="off"></textarea>
+          </div>
+          <div id="screening_q4_audio_panel" class="screening-detail-panel" hidden>
+            <div class="screening-detail-audio-actions">
+              <button type="button" class="record-btn screening-record-btn" data-screening-q="4">Record answer</button>
+              <audio class="screening-audio-player" data-screening-q="4" controls style="display:none;"></audio>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="screening-question">
+        <legend class="screening-question__legend">5. Do you currently train at least 3 days per week <em>and</em> at least 30 minutes per session on average?</legend>
+        <p class="screening-hard-rule">
+          You must answer <strong>Yes</strong> to continue. If you answer <strong>No</strong>, you cannot take part in this study.
+        </p>
+        <div class="screening-question__options">
+          <label class="screening-option"><input type="radio" name="screen_current_min" value="yes"> Yes</label>
+          <label class="screening-option"><input type="radio" name="screen_current_min" value="no"> No</label>
+        </div>
+      </fieldset>
+    </div>
+  </div>
+</div>
+
+<div id="screening-ineligible" class="screening-ineligible" aria-live="polite">
+  <div class="screening-ineligible__inner">
+    <p class="screening-ineligible__text">
+      Based on your responses, you do not meet the specific eligibility criteria for this study. We appreciate your time and interest!
+    </p>
+  </div>
+</div>
+
+<div id="survey-container" class="is-hidden">
 <header>
   <h1>Research Study</h1>
   <p style="color:#fff;font-size:1.18em;line-height:1.35em;margin:0.2em auto 0 auto;max-width:560px;font-weight:400;">
-    Thank you for participating. Complete the demographics, then answer each survey question in writing and/or by voice.
+    Thank you for participating in this survey study. Please complete the demographics, then answer each survey question in writing or by voice in as much detail as possible.
   </p>
 </header>
 <main>
@@ -465,7 +865,16 @@
     <div id="error" class="error-message" style="display:none;"></div>
   </form>
 </main>
+</div>
+
+<div id="success-screen" class="success-screen" role="status" aria-live="polite">
+  <div class="success-screen__inner">
+    <h1 class="success-screen__title">Thank you</h1>
+    <p class="success-screen__note">Your responses have been saved. We appreciate your participation in this study.</p>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>
