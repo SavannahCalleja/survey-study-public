@@ -469,10 +469,12 @@
     .screening-upload-status {
       margin: 0.5rem 0 0 0;
       font-size: 0.85rem;
-      color: #3d5a80;
       min-height: 1.25em;
     }
-    .screening-upload-status:not([hidden])::before {
+    .screening-upload-status--uploading:not([hidden]) {
+      color: #3d5a80;
+    }
+    .screening-upload-status--uploading:not([hidden])::before {
       content: '';
       display: inline-block;
       width: 0.85em;
@@ -484,10 +486,53 @@
       border-radius: 50%;
       animation: screening-upload-spin 0.7s linear infinite;
     }
+    .screening-upload-status--saved:not([hidden]) {
+      color: #1b5e20;
+      font-weight: 600;
+    }
+    .screening-upload-status--saved:not([hidden])::before {
+      content: '✓';
+      display: inline-block;
+      margin-right: 0.35em;
+      color: #2e7d32;
+      font-weight: 700;
+    }
     @keyframes screening-upload-spin {
       to {
         transform: rotate(360deg);
       }
+    }
+
+    .main-survey-audio-status {
+      margin: 0.45rem 0 0 0;
+      font-size: 0.85rem;
+      min-height: 1.25em;
+    }
+    .main-survey-audio-status--uploading:not([hidden]) {
+      color: #3d5a80;
+    }
+    .main-survey-audio-status--uploading:not([hidden])::before {
+      content: '';
+      display: inline-block;
+      width: 0.85em;
+      height: 0.85em;
+      margin-right: 0.4em;
+      vertical-align: -0.1em;
+      border: 2px solid #c5d0e0;
+      border-top-color: #2a4a6e;
+      border-radius: 50%;
+      animation: screening-upload-spin 0.7s linear infinite;
+    }
+    .main-survey-audio-status--saved:not([hidden]) {
+      color: #1b5e20;
+      font-weight: 600;
+    }
+    .main-survey-audio-status--saved:not([hidden])::before {
+      content: '✓';
+      display: inline-block;
+      margin-right: 0.35em;
+      color: #2e7d32;
+      font-weight: 700;
     }
 
     .screening-proceed-hint {
@@ -594,14 +639,6 @@
       color: #fff !important;
       animation: pulse 2.25s ease-in-out infinite;
       transition: background 0.2s ease, color 0.2s ease;
-    }
-
-    #record-q4.record-btn.transcribing {
-      animation: none !important;
-      background: #3d5a80 !important;
-      color: #fff !important;
-      cursor: wait;
-      box-shadow: none;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -867,6 +904,7 @@
               <audio controls style="display:none;" class="audio-player" data-q="1"></audio>
             </div>
           </div>
+          <p id="main_survey_q1_audio_status" class="main-survey-audio-status" hidden aria-live="polite"></p>
         </div>
       </div>
       <div class="response-card" data-q="2">
@@ -887,6 +925,7 @@
               <audio controls style="display:none;" class="audio-player" data-q="2"></audio>
             </div>
           </div>
+          <p id="main_survey_q2_audio_status" class="main-survey-audio-status" hidden aria-live="polite"></p>
         </div>
       </div>
       <div class="response-card" data-q="3">
@@ -907,6 +946,7 @@
               <audio controls style="display:none;" class="audio-player" data-q="3"></audio>
             </div>
           </div>
+          <p id="main_survey_q3_audio_status" class="main-survey-audio-status" hidden aria-live="polite"></p>
         </div>
       </div>
       <div class="response-card" data-q="4">
@@ -927,6 +967,7 @@
               <audio controls style="display:none;" class="audio-player" data-q="4"></audio>
             </div>
           </div>
+          <p id="main_survey_q4_audio_status" class="main-survey-audio-status" hidden aria-live="polite"></p>
         </div>
       </div>
       <div class="response-card" data-q="5">
@@ -947,6 +988,7 @@
               <audio controls style="display:none;" class="audio-player" data-q="5"></audio>
             </div>
           </div>
+          <p id="main_survey_q5_audio_status" class="main-survey-audio-status" hidden aria-live="polite"></p>
         </div>
       </div>
     </div>
@@ -965,6 +1007,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=24"></script>
+<script src="js/app.js?v=25"></script>
 </body>
 </html>

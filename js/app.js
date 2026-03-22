@@ -7,9 +7,11 @@ const SUPABASE_ANON_KEY =
 
 let supabaseClient;
 
-/** Pending voice answers only; uploaded to Supabase in submitSurvey(), not when recording stops. */
+/** Pending voice answers; main survey uploads immediately on stop (URLs cached here for submit). */
 const recordedBlobs = {};
 const previewUrls = {};
+/** Pre-uploaded Storage public URLs for main survey Q1–Q5 (fire-and-forget after each recording). */
+const mainSurveyUploadedAudioUrls = { 1: '', 2: '', 3: '', 4: '', 5: '' };
 let currentRecordingQ = null;
 let currentStream = null;
 let currentRecorder = null;
@@ -27,8 +29,6 @@ let q4_reason = '';
 /** Public Storage URLs after upload (reused on final submit). */
 let screeningQ3UploadedUrl = '';
 let screeningQ4UploadedUrl = '';
-let screeningQ3TranscriptionPending = false;
-let screeningQ4TranscriptionPending = false;
 
 /**
  * Draft `research_responses` row created on first screening voice clip; webhook fills screening_q3_reason / screening_q4_reason.
@@ -155,6 +155,8 @@ function getResponseMode(q) {
 function clearQuestionAudio(q) {
   revokeAudioPreview(q);
   delete recordedBlobs['q' + q];
+  mainSurveyUploadedAudioUrls[q] = '';
+  setMainSurveyUploadStatus(q, 'clear');
   const audio = document.querySelector('.audio-player[data-q="' + q + '"]');
   if (audio) {
     audio.pause();
@@ -162,6 +164,44 @@ function clearQuestionAudio(q) {
     audio.style.display = 'none';
   }
   setRecordButtonIdle(q);
+}
+
+/** @param {'uploading'|'saved'|'clear'} kind */
+function setMainSurveyUploadStatus(q, kind) {
+  var el = document.getElementById('main_survey_q' + q + '_audio_status');
+  if (!el) return;
+  el.className = 'main-survey-audio-status';
+  if (kind === 'uploading') {
+    el.classList.add('main-survey-audio-status--uploading');
+    el.textContent = 'Uploading…';
+    el.hidden = false;
+  } else if (kind === 'saved') {
+    el.classList.add('main-survey-audio-status--saved');
+    el.textContent = 'Saved';
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
+
+function runMainSurveyUploadAfterStop(qNum, blob) {
+  if (!supabaseClient) {
+    showError('Survey is not connected. Check Supabase settings in js/app.js.');
+    return;
+  }
+  setMainSurveyUploadStatus(qNum, 'uploading');
+  uploadMainSurveyQuestionAudio(qNum, blob)
+    .then(function (url) {
+      mainSurveyUploadedAudioUrls[qNum] = url;
+      setMainSurveyUploadStatus(qNum, 'saved');
+    })
+    .catch(function (err) {
+      console.error('[Main survey] audio upload:', err);
+      mainSurveyUploadedAudioUrls[qNum] = '';
+      setMainSurveyUploadStatus(qNum, 'clear');
+      showError('Could not upload your recording. Please try recording again.');
+    });
 }
 
 function setResponseModeUI(q, mode) {
@@ -261,6 +301,8 @@ function setRecordButtonActive(q) {
   if (!btn) return;
   btn.classList.add('recording');
   btn.textContent = 'Recording... Tap to Stop';
+  mainSurveyUploadedAudioUrls[q] = '';
+  setMainSurveyUploadStatus(q, 'clear');
 }
 
 function resetAllRecordButtons() {
@@ -440,14 +482,12 @@ function clearScreeningDetail(which) {
   if (which === 3) {
     q3_reason = '';
     screeningQ3UploadedUrl = '';
-    screeningQ3TranscriptionPending = false;
-    setScreeningUploadStatus(3, '');
+    setScreeningUploadStatus(3, 'clear');
   }
   if (which === 4) {
     q4_reason = '';
     screeningQ4UploadedUrl = '';
-    screeningQ4TranscriptionPending = false;
-    setScreeningUploadStatus(4, '');
+    setScreeningUploadStatus(4, 'clear');
   }
 }
 
@@ -480,11 +520,18 @@ function eligibilityRecordButtonId(which) {
   return which === 3 ? 'record-q3' : 'record-q4';
 }
 
-function setScreeningUploadStatus(which, message) {
+/** @param {'uploading'|'saved'|'clear'} kind */
+function setScreeningUploadStatus(which, kind) {
   var el = document.getElementById('screening_q' + which + '_upload_status');
   if (!el) return;
-  if (message) {
-    el.textContent = message;
+  el.className = 'screening-upload-status';
+  if (kind === 'uploading') {
+    el.classList.add('screening-upload-status--uploading');
+    el.textContent = 'Uploading…';
+    el.hidden = false;
+  } else if (kind === 'saved') {
+    el.classList.add('screening-upload-status--saved');
+    el.textContent = 'Saved';
     el.hidden = false;
   } else {
     el.textContent = '';
@@ -495,7 +542,7 @@ function setScreeningUploadStatus(which, message) {
 function setScreeningRecordButtonIdle(which) {
   const btn = document.getElementById(eligibilityRecordButtonId(which));
   if (!btn) return;
-  btn.classList.remove('recording', 'transcribing');
+  btn.classList.remove('recording');
   btn.disabled = false;
   btn.textContent = 'Record answer';
 }
@@ -503,20 +550,17 @@ function setScreeningRecordButtonIdle(which) {
 function setScreeningRecordButtonActive(which) {
   const btn = document.getElementById(eligibilityRecordButtonId(which));
   if (!btn) return;
-  btn.classList.remove('transcribing');
   btn.disabled = false;
   btn.classList.add('recording');
   btn.textContent = 'Recording... Tap to Stop';
-}
-
-/** Stops red pulse; shows that Whisper is running (eligibility Q3/Q4). */
-function setScreeningRecordButtonTranscribing(which) {
-  const btn = document.getElementById(eligibilityRecordButtonId(which));
-  if (!btn) return;
-  btn.classList.remove('recording');
-  btn.classList.add('transcribing');
-  btn.disabled = true;
-  btn.textContent = 'Transcribing…';
+  if (which === 3) {
+    screeningQ3UploadedUrl = '';
+    q3_reason = '';
+  } else {
+    screeningQ4UploadedUrl = '';
+    q4_reason = '';
+  }
+  setScreeningUploadStatus(which, 'clear');
 }
 
 function stopScreeningRecording(opts) {
@@ -556,14 +600,12 @@ function syncScreeningDetailPanels(which) {
     if (which === 3) {
       q3_reason = '';
       screeningQ3UploadedUrl = '';
-      screeningQ3TranscriptionPending = false;
-      setScreeningUploadStatus(3, '');
+      setScreeningUploadStatus(3, 'clear');
     }
     if (which === 4) {
       q4_reason = '';
       screeningQ4UploadedUrl = '';
-      screeningQ4TranscriptionPending = false;
-      setScreeningUploadStatus(4, '');
+      setScreeningUploadStatus(4, 'clear');
     }
     if (screeningCurrentWhich === which) stopScreeningRecording();
   } else {
@@ -574,8 +616,7 @@ function syncScreeningDetailPanels(which) {
 
 /**
  * Follow-up complete when: main question is No (handled by caller), or Yes with text in textarea,
- * or Yes with voice: **upload succeeded** (`screening_q*_audio_url` in memory) and/or transcript/textarea.
- * Eligibility does not wait for webhook transcription once the public URL exists.
+ * or Yes with voice: recording exists and **Storage upload finished** (public URL in memory). Transcription is server-side only.
  */
 function screeningDetailComplete(which) {
   if (getScreeningDetailMode(which) === 'text') {
@@ -583,17 +624,11 @@ function screeningDetailComplete(which) {
   }
   if (which === 3) {
     if (!screeningRecordedBlobs.sq3) return false;
-    var hasUrl = !!(screeningQ3UploadedUrl && String(screeningQ3UploadedUrl).trim());
-    var hasText = !!(q3_reason.trim() || getScreeningReasonText('screening_q3_reason').trim());
-    if (screeningQ3TranscriptionPending && !hasUrl) return false;
-    return hasUrl || hasText;
+    return !!(screeningQ3UploadedUrl && String(screeningQ3UploadedUrl).trim());
   }
   if (which === 4) {
     if (!screeningRecordedBlobs.sq4) return false;
-    var hasUrl4 = !!(screeningQ4UploadedUrl && String(screeningQ4UploadedUrl).trim());
-    var hasText4 = !!(q4_reason.trim() || getScreeningReasonText('screening_q4_reason').trim());
-    if (screeningQ4TranscriptionPending && !hasUrl4) return false;
-    return hasUrl4 || hasText4;
+    return !!(screeningQ4UploadedUrl && String(screeningQ4UploadedUrl).trim());
   }
   return !!screeningRecordedBlobs['sq' + which];
 }
@@ -834,19 +869,17 @@ function handleScreeningRecordClick(which) {
         const objectUrl = URL.createObjectURL(blob);
         screeningPreviewUrls['sq' + which] = objectUrl;
         setScreeningPlayerUI(which, objectUrl);
-        runScreeningVoiceWebhookPipeline(which, blob).catch(function (err) {
-          console.warn('[Screening Q' + which + ' transcription]', err);
+        runScreeningVoiceUploadPipeline(which, blob).catch(function (err) {
+          console.warn('[Screening Q' + which + ' upload]', err);
           if (which === 3) {
-            screeningQ3TranscriptionPending = false;
+            screeningQ3UploadedUrl = '';
           } else {
-            screeningQ4TranscriptionPending = false;
+            screeningQ4UploadedUrl = '';
           }
-          setScreeningUploadStatus(which, '');
+          setScreeningUploadStatus(which, 'clear');
           setScreeningRecordButtonIdle(which);
           updateScreeningProceedButton();
-          showError(
-            'Could not save or transcribe this recording. Please type your answer or try recording again.'
-          );
+          showError('Could not upload this recording. Please type your answer or try again.');
           onScreeningChange().catch(function (e) {
             console.warn('[Screening]', e);
           });
@@ -954,66 +987,11 @@ function uploadEligibilityScreeningAudio(which3Or4, blob) {
 }
 
 /**
- * Poll until DB webhook + `transcribe-audio` fill `screening_q3_reason` / `screening_q4_reason` on the draft row.
+ * Persist screening audio URL to `research_responses` (draft insert or update). Webhook transcribes in the background; client does not wait.
  */
-async function pollScreeningReasonColumn(rowId, columnKey) {
-  const maxAttempts = 60;
-  const intervalMs = 1500;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const { data, error } = await supabaseClient
-      .from('research_responses')
-      .select(columnKey)
-      .eq('id', rowId)
-      .single();
-    if (error) throw error;
-    const v = data && data[columnKey];
-    if (v != null && String(v).trim() !== '') {
-      return String(v).trim();
-    }
-    await new Promise(function (resolve) {
-      setTimeout(resolve, intervalMs);
-    });
-  }
-  throw new Error('Transcription timed out waiting for ' + columnKey);
-}
-
-/**
- * Upload → INSERT or UPDATE `research_responses` with screening audio URL → webhook transcribes → poll `screening_q*_reason`.
- */
-async function runScreeningVoiceWebhookPipeline(which, blob) {
+async function persistScreeningDraftAudioUrl(which, publicUrl) {
   if (!supabaseClient) throw new Error('Supabase not initialized');
   const urlField = which === 3 ? 'screening_q3_audio_url' : 'screening_q4_audio_url';
-  const reasonCol = which === 3 ? 'screening_q3_reason' : 'screening_q4_reason';
-
-  if (which === 3) {
-    q3_reason = '';
-    screeningQ3UploadedUrl = '';
-    screeningQ3TranscriptionPending = true;
-  } else {
-    q4_reason = '';
-    screeningQ4UploadedUrl = '';
-    screeningQ4TranscriptionPending = true;
-  }
-  updateScreeningProceedButton();
-  setScreeningUploadStatus(which, 'Uploading…');
-  var recordBtn = document.getElementById(eligibilityRecordButtonId(which));
-  if (recordBtn) {
-    recordBtn.disabled = true;
-    recordBtn.classList.remove('recording', 'transcribing');
-    recordBtn.textContent = 'Uploading…';
-  }
-
-  const publicUrl = await uploadEligibilityScreeningAudio(which, blob);
-  if (which === 3) {
-    screeningQ3UploadedUrl = publicUrl;
-  } else {
-    screeningQ4UploadedUrl = publicUrl;
-  }
-
-  setScreeningUploadStatus(which, '');
-  updateScreeningProceedButton();
-  setScreeningRecordButtonTranscribing(which);
-
   let rowId = null;
   try {
     rowId = sessionStorage.getItem(SCREENING_ROW_ID_KEY);
@@ -1032,39 +1010,62 @@ async function runScreeningVoiceWebhookPipeline(which, blob) {
     base[urlField] = publicUrl;
     const { data, error } = await supabaseClient.from('research_responses').insert([base]).select('id').single();
     if (error) throw error;
-    rowId = data.id;
     try {
-      sessionStorage.setItem(SCREENING_ROW_ID_KEY, rowId);
+      sessionStorage.setItem(SCREENING_ROW_ID_KEY, data.id);
     } catch (e) {}
   } else {
     const { error } = await supabaseClient.from('research_responses').update({ [urlField]: publicUrl }).eq('id', rowId);
     if (error) throw error;
   }
+}
 
-  const text = await pollScreeningReasonColumn(rowId, reasonCol);
-  if (which === 3) {
-    q3_reason = text;
-    screeningQ3TranscriptionPending = false;
-    const ta = document.getElementById('screening_q3_reason');
-    if (ta) ta.value = text;
-  } else {
-    q4_reason = text;
-    screeningQ4TranscriptionPending = false;
-    const ta = document.getElementById('screening_q4_reason');
-    if (ta) ta.value = text;
+/**
+ * Upload to Storage → unlock Proceed immediately → persist URL in background (no polling for transcription).
+ */
+async function runScreeningVoiceUploadPipeline(which, blob) {
+  if (!supabaseClient) throw new Error('Supabase not initialized');
+
+  updateScreeningProceedButton();
+  setScreeningUploadStatus(which, 'uploading');
+  var recordBtn = document.getElementById(eligibilityRecordButtonId(which));
+  if (recordBtn) {
+    recordBtn.disabled = true;
+    recordBtn.classList.remove('recording');
+    recordBtn.textContent = 'Uploading…';
   }
-  setScreeningUploadStatus(which, '');
+
+  const publicUrl = await uploadEligibilityScreeningAudio(which, blob);
+  if (which === 3) {
+    screeningQ3UploadedUrl = publicUrl;
+  } else {
+    screeningQ4UploadedUrl = publicUrl;
+  }
+
+  setScreeningUploadStatus(which, 'saved');
   setScreeningRecordButtonIdle(which);
   updateScreeningProceedButton();
+
+  persistScreeningDraftAudioUrl(which, publicUrl).catch(function (err) {
+    console.warn('[Screening] Could not save audio URL to database:', err);
+    showError('Recording uploaded, but saving the link failed. Please try again or use a written response.');
+    if (which === 3) {
+      screeningQ3UploadedUrl = '';
+    } else {
+      screeningQ4UploadedUrl = '';
+    }
+    setScreeningUploadStatus(which, 'clear');
+    setScreeningRecordButtonIdle(which);
+    updateScreeningProceedButton();
+  });
+
   onScreeningChange().catch(function (err) {
     console.warn('[Screening]', err);
   });
 }
 
 /**
- * Validates (written XOR voice per question), uploads to `voice-memos`, saves `research_responses`.
- * Main survey voice: `trans_q*` filled by DB webhook → `transcribe-audio` after insert/update.
- * Eligibility voice: webhook fills `screening_q3_reason` / `screening_q4_reason` from screening audio URLs (draft row may exist before final submit).
+ * Validates (written XOR voice per question), saves `research_responses`.
+ * Voice clips upload to Storage as soon as recording stops (main survey + screening); `trans_q*` / screening reason columns are filled by the server webhook.
  * Never call Edge Functions from the browser for transcription.
  */
 async function submitSurvey(ev) {
@@ -1148,7 +1149,7 @@ async function submitSurvey(ev) {
 
   let needsUpload = false;
   for (let u = 1; u <= 5; u++) {
-    if (getResponseMode(u) === 'audio' && recordedBlobs['q' + u]) {
+    if (getResponseMode(u) === 'audio' && recordedBlobs['q' + u] && !mainSurveyUploadedAudioUrls[u]) {
       needsUpload = true;
       break;
     }
@@ -1183,7 +1184,9 @@ async function submitSurvey(ev) {
     try {
       for (let qUp = 1; qUp <= 5; qUp++) {
         if (getResponseMode(qUp) === 'audio' && recordedBlobs['q' + qUp]) {
-          qAudioUrls[qUp] = await uploadMainSurveyQuestionAudio(qUp, recordedBlobs['q' + qUp]);
+          qAudioUrls[qUp] = mainSurveyUploadedAudioUrls[qUp]
+            ? mainSurveyUploadedAudioUrls[qUp]
+            : await uploadMainSurveyQuestionAudio(qUp, recordedBlobs['q' + qUp]);
         }
       }
     } catch (err) {
@@ -1268,7 +1271,11 @@ async function submitSurvey(ev) {
 
   for (let rq = 1; rq <= 5; rq++) revokeAudioPreview(rq);
   resetAllRecordButtons();
-  for (let cq = 1; cq <= 5; cq++) delete recordedBlobs['q' + cq];
+  for (let cq = 1; cq <= 5; cq++) {
+    delete recordedBlobs['q' + cq];
+    mainSurveyUploadedAudioUrls[cq] = '';
+    setMainSurveyUploadStatus(cq, 'clear');
+  }
   showSubmissionSuccessView();
   document.getElementById('research-survey').reset();
   syncPrimaryModalityOtherUI();
@@ -1321,6 +1328,7 @@ function bindRecordButtons() {
             const objectUrl = URL.createObjectURL(blob);
             previewUrls['q' + qNum] = objectUrl;
             setPlayerUI(qNum, objectUrl);
+            runMainSurveyUploadAfterStop(qNum, blob);
           };
           recorder.start();
         } catch (err) {
