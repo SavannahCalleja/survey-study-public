@@ -38,7 +38,7 @@ const SCREENING_ROW_ID_KEY = 'research_survey_screening_row_id';
 
 /**
  * Audio pipeline (single source of truth — no client-side transcription calls):
- * 1) Browser uploads to Storage via `uploadParticipantAudio` → object key `survey/{participantId}_{questionSlug}.ext`.
+ * 1) Browser uploads to Storage via `uploadParticipantAudio` → object key `survey/{participantId}_{questionSlug}_{timestamp}.ext`.
  * 2) Client writes the matching `*_url` column on `research_responses` (INSERT/UPDATE).
  * 3) Configure Supabase so DB or Storage webhooks invoke your Edge Function (e.g. `transcribe-audio`) when those URLs change.
  *    Main survey: `q1_audio_url`…`q5_audio_url` → `trans_q1`…`trans_q5`. Eligibility: `screening_q3_audio_url` / `screening_q4_audio_url` → `q3_reason` / `q4_reason`.
@@ -904,20 +904,33 @@ function stopRecording() {
 }
 
 /**
- * Universal audio upload: `survey/{participantId}_{questionSlug}.{ext}`
+ * Universal audio upload: `survey/{participantId}_{questionSlug}_{Date.now()}.{ext}`
+ * Timestamp keeps keys unique per take; `upsert: true` allows overwrite if the same key is reused.
  * questionSlug examples: `main_q1`…`main_q5`, `screening_q3`, `screening_q4`.
  */
 async function uploadParticipantAudio(questionSlug, blob) {
   if (!supabaseClient) throw new Error('Supabase not initialized');
   var participantId = getOrCreateParticipantId();
   var ext = fileExtensionForAudioBlob(blob);
-  var path = AUDIO_STORAGE_SURVEY_PREFIX + '/' + participantId + '_' + questionSlug + '.' + ext;
+  var ts = Date.now();
+  var path = AUDIO_STORAGE_SURVEY_PREFIX + '/' + participantId + '_' + questionSlug + '_' + ts + '.' + ext;
   var { error } = await supabaseClient.storage.from(AUDIO_STORAGE_BUCKET).upload(path, blob, {
-    upsert: false,
+    upsert: true,
     contentType: storageContentTypeForBlob(blob),
   });
   if (error) {
-    console.error('[Supabase storage] upload failed:', error, { bucket: AUDIO_STORAGE_BUCKET, path: path });
+    var errMsg =
+      (error && error.message) ||
+      (typeof error === 'string' ? error : '') ||
+      (error && error.error) ||
+      String(error);
+    console.error('[Supabase storage] upload failed — full message:', errMsg, {
+      bucket: AUDIO_STORAGE_BUCKET,
+      path: path,
+      errorName: error && error.name,
+      errorCode: error && error.statusCode,
+      fullError: error,
+    });
     throw error;
   }
   var { data: urlData } = supabaseClient.storage.from(AUDIO_STORAGE_BUCKET).getPublicUrl(path);
