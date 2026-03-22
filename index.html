@@ -564,18 +564,26 @@
     }
 
     .record-btn.recording,
-    #record-screening-q3.record-btn.recording,
-    #record-screening-q4.record-btn.recording {
+    #record-q3.record-btn.recording,
+    #record-q4.record-btn.recording {
       background: #b71c1c !important;
       color: #fff !important;
       animation: pulse 2.25s ease-in-out infinite;
       transition: background 0.2s ease, color 0.2s ease;
     }
 
+    #record-q4.record-btn.transcribing {
+      animation: none !important;
+      background: #3d5a80 !important;
+      color: #fff !important;
+      cursor: wait;
+      box-shadow: none;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .record-btn.recording,
-      #record-screening-q3.record-btn.recording,
-      #record-screening-q4.record-btn.recording {
+      #record-q3.record-btn.recording,
+      #record-q4.record-btn.recording {
         animation: none;
         box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
       }
@@ -597,7 +605,7 @@
       <p class="screening-phase__intro">
         Please answer each question honestly. Your responses determine whether you may continue to the main survey. This section uses different criteria than the questions that follow.
       </p>
-      <!-- research_responses screening columns (must match js/app.js): screening_age, screening_ten_years, screening_noninjury_break, screening_pause_count, screening_current_min, screening_q3_detail_mode, screening_q4_detail_mode, screening_q3_reason, screening_q4_reason, screening_q3_audio_url, screening_q4_audio_url -->
+      <!-- research_responses screening columns (must match js/app.js): screening_age, screening_ten_years, screening_noninjury_break, screening_pause_count, screening_current_min, screening_q3_detail_mode, screening_q4_detail_mode, screening_q3_reason, screening_q4_reason, screening_q3_audio_url, screening_q4_audio_url, q4_reason -->
 
       <fieldset class="screening-question">
         <legend class="screening-question__legend">1. Are you between 18 and 85 years of age?</legend>
@@ -642,7 +650,7 @@
           </div>
           <div id="screening_q3_audio_panel" class="screening-detail-panel" hidden>
             <div class="screening-detail-audio-actions">
-              <button type="button" id="record-screening-q3" class="record-btn screening-record-btn" data-screening-q="3" aria-label="Record voice answer for eligibility follow-up question 3">Record answer</button>
+              <button type="button" id="record-q3" class="record-btn screening-record-btn" data-screening-q="3" aria-label="Record voice answer for eligibility follow-up question 3">Record answer</button>
               <audio class="screening-audio-player" data-screening-q="3" controls style="display:none;"></audio>
             </div>
           </div>
@@ -670,7 +678,7 @@
           </div>
           <div id="screening_q4_audio_panel" class="screening-detail-panel" hidden>
             <div class="screening-detail-audio-actions">
-              <button type="button" id="record-screening-q4" class="record-btn screening-record-btn" data-screening-q="4" aria-label="Record voice answer for eligibility follow-up question 4">Record answer</button>
+              <button type="button" id="record-q4" class="record-btn screening-record-btn" data-screening-q="4" aria-label="Record voice answer for eligibility follow-up question 4">Record answer</button>
               <audio class="screening-audio-player" data-screening-q="4" controls style="display:none;"></audio>
             </div>
           </div>
@@ -931,6 +939,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=13"></script>
+<script src="js/app.js?v=19"></script>
 </body>
 </html>

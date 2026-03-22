@@ -1,3 +1,7 @@
 # Database webhooks call this function without a user JWT — disable verification for that route.
 [functions.transcribe-audio]
 verify_jwt = false
+
+# Browser invokes after eligibility screening recordings (anon key + FormData).
+[functions.transcribe-screening-blob]
+verify_jwt = false

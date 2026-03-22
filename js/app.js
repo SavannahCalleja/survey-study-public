@@ -21,6 +21,40 @@ let screeningCurrentRecorder = null;
 let screeningCurrentStream = null;
 let screeningCurrentWhich = null;
 
+/** Eligibility Q3/Q4 voice: Whisper transcripts (DB columns `q3_reason` / `q4_reason`). */
+let q3_reason = '';
+let q4_reason = '';
+/** Public Storage URLs after upload (reused on final submit). */
+let screeningQ3UploadedUrl = '';
+let screeningQ4UploadedUrl = '';
+let screeningQ3TranscriptionPending = false;
+let screeningQ4TranscriptionPending = false;
+
+/**
+ * Draft `research_responses` row created on first screening voice clip; webhook fills q3_reason/q4_reason.
+ * Final survey submit updates this row instead of inserting again.
+ */
+const SCREENING_ROW_ID_KEY = 'research_survey_screening_row_id';
+
+/**
+ * Audio pipeline (single source of truth — no client-side transcription calls):
+ * 1) Browser uploads to Storage via `uploadParticipantAudio` → object key `survey/{participantId}_{questionSlug}.ext`.
+ * 2) Client writes the matching `*_url` column on `research_responses` (INSERT/UPDATE).
+ * 3) Configure Supabase so DB or Storage webhooks invoke your Edge Function (e.g. `transcribe-audio`) when those URLs change.
+ *    Main survey: `q1_audio_url`…`q5_audio_url` → `trans_q1`…`trans_q5`. Eligibility: `screening_q3_audio_url` / `screening_q4_audio_url` → `q3_reason` / `q4_reason`.
+ */
+const AUDIO_STORAGE_BUCKET = 'voice-memos';
+const AUDIO_STORAGE_SURVEY_PREFIX = 'survey';
+const PARTICIPANT_ID_STORAGE_KEY = 'research_survey_participant_id';
+
+const EMPTY_MAIN_Q_AUDIO_URLS = {
+  q1_audio_url: '',
+  q2_audio_url: '',
+  q3_audio_url: '',
+  q4_audio_url: '',
+  q5_audio_url: '',
+};
+
 /** Picks a MIME type supported by MediaRecorder (WebM in Chrome/Firefox; MP4/AAC on Safari). */
 function getBestSupportedAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
@@ -89,6 +123,23 @@ function initSupabase() {
     console.warn('[Supabase] Set SUPABASE_URL and SUPABASE_ANON_KEY in js/app.js');
   }
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  getOrCreateParticipantId();
+}
+
+/** One stable id per tab/session for Storage paths (not Supabase Auth). */
+function getOrCreateParticipantId() {
+  try {
+    var existing = sessionStorage.getItem(PARTICIPANT_ID_STORAGE_KEY);
+    if (existing) return existing;
+    var id =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now()) + '_' + Math.random().toString(36).slice(2, 12);
+    sessionStorage.setItem(PARTICIPANT_ID_STORAGE_KEY, id);
+    return id;
+  } catch (e) {
+    return String(Date.now()) + '_' + Math.random().toString(36).slice(2, 12);
+  }
 }
 
 function getResponseText(q) {
@@ -314,6 +365,16 @@ function clearScreeningDetail(which) {
   revokeScreeningPreview(which);
   screeningAudioPlayerClear(which);
   setScreeningRecordButtonIdle(which);
+  if (which === 3) {
+    q3_reason = '';
+    screeningQ3UploadedUrl = '';
+    screeningQ3TranscriptionPending = false;
+  }
+  if (which === 4) {
+    q4_reason = '';
+    screeningQ4UploadedUrl = '';
+    screeningQ4TranscriptionPending = false;
+  }
 }
 
 function revokeScreeningPreview(which) {
@@ -341,21 +402,39 @@ function screeningAudioPlayerClear(which) {
   }
 }
 
+function eligibilityRecordButtonId(which) {
+  return which === 3 ? 'record-q3' : 'record-q4';
+}
+
 function setScreeningRecordButtonIdle(which) {
-  const btn = document.getElementById('record-screening-q' + which);
+  const btn = document.getElementById(eligibilityRecordButtonId(which));
   if (!btn) return;
-  btn.classList.remove('recording');
+  btn.classList.remove('recording', 'transcribing');
+  btn.disabled = false;
   btn.textContent = 'Record answer';
 }
 
 function setScreeningRecordButtonActive(which) {
-  const btn = document.getElementById('record-screening-q' + which);
+  const btn = document.getElementById(eligibilityRecordButtonId(which));
   if (!btn) return;
+  btn.classList.remove('transcribing');
+  btn.disabled = false;
   btn.classList.add('recording');
   btn.textContent = 'Recording... Tap to Stop';
 }
 
-function stopScreeningRecording() {
+/** Stops red pulse; shows that Whisper is running (eligibility Q3/Q4). */
+function setScreeningRecordButtonTranscribing(which) {
+  const btn = document.getElementById(eligibilityRecordButtonId(which));
+  if (!btn) return;
+  btn.classList.remove('recording');
+  btn.classList.add('transcribing');
+  btn.disabled = true;
+  btn.textContent = 'Transcribing…';
+}
+
+function stopScreeningRecording(opts) {
+  opts = opts || {};
   if (screeningCurrentRecorder) {
     try {
       screeningCurrentRecorder.stop();
@@ -369,7 +448,9 @@ function stopScreeningRecording() {
     screeningCurrentStream = null;
   }
   if (screeningCurrentWhich !== null) {
-    setScreeningRecordButtonIdle(screeningCurrentWhich);
+    if (!opts.skipButtonIdle) {
+      setScreeningRecordButtonIdle(screeningCurrentWhich);
+    }
     screeningCurrentWhich = null;
   }
 }
@@ -386,6 +467,16 @@ function syncScreeningDetailPanels(which) {
     delete screeningRecordedBlobs['sq' + which];
     revokeScreeningPreview(which);
     screeningAudioPlayerClear(which);
+    if (which === 3) {
+      q3_reason = '';
+      screeningQ3UploadedUrl = '';
+      screeningQ3TranscriptionPending = false;
+    }
+    if (which === 4) {
+      q4_reason = '';
+      screeningQ4UploadedUrl = '';
+      screeningQ4TranscriptionPending = false;
+    }
     if (screeningCurrentWhich === which) stopScreeningRecording();
   } else {
     const ta = document.getElementById('screening_q' + which + '_reason');
@@ -407,6 +498,16 @@ function screeningDescribeValid() {
 function screeningDetailComplete(which) {
   if (getScreeningDetailMode(which) === 'text') {
     return !!getScreeningReasonText('screening_q' + which + '_reason');
+  }
+  if (which === 3) {
+    if (!screeningRecordedBlobs.sq3) return false;
+    if (screeningQ3TranscriptionPending) return false;
+    return !!(q3_reason.trim() || getScreeningReasonText('screening_q3_reason').trim());
+  }
+  if (which === 4) {
+    if (!screeningRecordedBlobs.sq4) return false;
+    if (screeningQ4TranscriptionPending) return false;
+    return !!(q4_reason.trim() || getScreeningReasonText('screening_q4_reason').trim());
   }
   return !!screeningRecordedBlobs['sq' + which];
 }
@@ -457,7 +558,8 @@ async function onScreeningChange() {
  *
  * buildScreeningRowExtras() also sets:
  * screening_q3_reason, screening_q4_reason  (from textarea ids screening_q3_reason, screening_q4_reason)
- * screening_q3_audio_url, screening_q4_audio_url  (voice-memos public URLs)
+ * screening_q3_audio_url, screening_q4_audio_url  (same bucket; paths `survey/{participantId}_screening_q3|4.*`)
+ * q3_reason, q4_reason — eligibility voice transcripts (filled by webhook after INSERT/UPDATE); text mode mirrors textarea.
  */
 function getScreeningAnswersSnapshot() {
   const q3FollowUp = getScreeningValue('screen_noninjury_break') === 'yes';
@@ -480,19 +582,32 @@ async function buildScreeningRowExtras() {
     screening_q4_reason: '',
     screening_q3_audio_url: '',
     screening_q4_audio_url: '',
+    q3_reason: '',
+    q4_reason: '',
   });
   if (getScreeningValue('screen_noninjury_break') === 'yes') {
     if (getScreeningDetailMode(3) === 'text') {
       out.screening_q3_reason = getScreeningReasonText('screening_q3_reason');
+      out.q3_reason = out.screening_q3_reason;
     } else if (screeningRecordedBlobs.sq3) {
-      out.screening_q3_audio_url = await uploadScreeningAudioBlob(3, screeningRecordedBlobs.sq3);
+      const q3Url = screeningQ3UploadedUrl || (await uploadEligibilityScreeningAudio(3, screeningRecordedBlobs.sq3));
+      out.screening_q3_audio_url = q3Url;
+      screeningQ3UploadedUrl = q3Url;
+      out.q3_reason = q3_reason.trim();
+      out.screening_q3_reason = q3_reason.trim();
     }
   }
   if (getScreeningValue('screen_pause_count') === 'yes') {
     if (getScreeningDetailMode(4) === 'text') {
-      out.screening_q4_reason = getScreeningReasonText('screening_q4_reason');
+      const t4 = getScreeningReasonText('screening_q4_reason');
+      out.screening_q4_reason = t4;
+      out.q4_reason = t4;
     } else if (screeningRecordedBlobs.sq4) {
-      out.screening_q4_audio_url = await uploadScreeningAudioBlob(4, screeningRecordedBlobs.sq4);
+      const q4Url = screeningQ4UploadedUrl || (await uploadEligibilityScreeningAudio(4, screeningRecordedBlobs.sq4));
+      out.screening_q4_audio_url = q4Url;
+      screeningQ4UploadedUrl = q4Url;
+      out.q4_reason = q4_reason.trim();
+      out.screening_q4_reason = q4_reason.trim();
     }
   }
   return out;
@@ -506,9 +621,20 @@ async function persistScreeningScreenout() {
     const row = Object.assign({}, extras, {
       submitted_at: new Date().toISOString(),
     });
-    const { error } = await supabaseClient.from('research_responses').insert([row]);
-    if (error) {
-      console.warn('[Screening] Could not save screening data (add columns or relax NOT NULL):', error.message);
+    let draftId = null;
+    try {
+      draftId = sessionStorage.getItem(SCREENING_ROW_ID_KEY);
+    } catch (e) {}
+    if (draftId) {
+      const { error } = await supabaseClient.from('research_responses').update(row).eq('id', draftId);
+      if (error) {
+        console.warn('[Screening] Could not update screening draft row:', error.message);
+      }
+    } else {
+      const { error } = await supabaseClient.from('research_responses').insert([row]);
+      if (error) {
+        console.warn('[Screening] Could not save screening data (add columns or relax NOT NULL):', error.message);
+      }
     }
   } catch (e) {
     console.warn('[Screening] persistScreeningScreenout:', e);
@@ -582,20 +708,16 @@ function bindScreeningModeRadios() {
 }
 
 /**
- * Delegated clicks on #screening-phase so listeners work even when the audio panel is hidden at load.
- * Uses the same startRecording / stopRecording pipeline as the main survey.
+ * Dedicated listeners on #record-q3 and #record-q4 (eligibility only — not main survey Q3/Q4).
  */
 function bindScreeningRecordButtons() {
-  const phase = document.getElementById('screening-phase');
-  if (!phase) return;
-  phase.addEventListener('click', function (e) {
-    const btn = e.target.closest('#record-screening-q3, #record-screening-q4');
-    if (!btn) return;
-    if (btn.disabled) return;
-    const which = btn.id === 'record-screening-q3' ? 3 : btn.id === 'record-screening-q4' ? 4 : null;
-    if (which === null) return;
-    e.preventDefault();
-    handleScreeningRecordClick(which);
+  [3, 4].forEach(function (which) {
+    const el = document.getElementById(eligibilityRecordButtonId(which));
+    if (!el) return;
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      handleScreeningRecordClick(which);
+    });
   });
 }
 
@@ -603,7 +725,7 @@ function handleScreeningRecordClick(which) {
   if (getScreeningDetailMode(which) !== 'audio') return;
   if (screeningCurrentRecorder && screeningCurrentWhich === which) {
     screeningCurrentRecorder.stop();
-    stopScreeningRecording();
+    stopScreeningRecording({ skipButtonIdle: which === 3 || which === 4 });
     return;
   }
   stopRecording();
@@ -626,8 +748,20 @@ function handleScreeningRecordClick(which) {
         const objectUrl = URL.createObjectURL(blob);
         screeningPreviewUrls['sq' + which] = objectUrl;
         setScreeningPlayerUI(which, objectUrl);
-        onScreeningChange().catch(function (err) {
-          console.warn('[Screening]', err);
+        runScreeningVoiceWebhookPipeline(which, blob).catch(function (err) {
+          console.warn('[Screening Q' + which + ' transcription]', err);
+          if (which === 3) {
+            screeningQ3TranscriptionPending = false;
+          } else {
+            screeningQ4TranscriptionPending = false;
+          }
+          setScreeningRecordButtonIdle(which);
+          showError(
+            'Could not transcribe this recording. Please type your answer or try recording again.'
+          );
+          onScreeningChange().catch(function (e) {
+            console.warn('[Screening]', e);
+          });
         });
       };
       recorder.start();
@@ -689,47 +823,139 @@ function stopRecording() {
   stopAllRecordings();
 }
 
-async function uploadAudioBlob(qnumber, blob) {
-  const ts = Date.now();
-  const nonce = Math.random().toString(36).slice(2, 10);
-  const ext = fileExtensionForAudioBlob(blob);
-  const filename = 'q' + qnumber + '_' + ts + '_' + nonce + '.' + ext;
-  const { error } = await supabaseClient.storage.from('voice-memos').upload(filename, blob, {
+/**
+ * Universal audio upload: `survey/{participantId}_{questionSlug}.{ext}`
+ * questionSlug examples: `main_q1`…`main_q5`, `screening_q3`, `screening_q4`.
+ */
+async function uploadParticipantAudio(questionSlug, blob) {
+  if (!supabaseClient) throw new Error('Supabase not initialized');
+  var participantId = getOrCreateParticipantId();
+  var ext = fileExtensionForAudioBlob(blob);
+  var path = AUDIO_STORAGE_SURVEY_PREFIX + '/' + participantId + '_' + questionSlug + '.' + ext;
+  var { error } = await supabaseClient.storage.from(AUDIO_STORAGE_BUCKET).upload(path, blob, {
     upsert: false,
     contentType: storageContentTypeForBlob(blob),
   });
   if (error) {
-    console.error('[Supabase storage] upload failed:', error, { bucket: 'voice-memos', filename });
+    console.error('[Supabase storage] upload failed:', error, { bucket: AUDIO_STORAGE_BUCKET, path: path });
     throw error;
   }
-  const { data: urlData } = supabaseClient.storage.from('voice-memos').getPublicUrl(filename);
+  var { data: urlData } = supabaseClient.storage.from(AUDIO_STORAGE_BUCKET).getPublicUrl(path);
   return urlData.publicUrl;
 }
 
-async function uploadScreeningAudioBlob(which, blob) {
-  const ts = Date.now();
-  const nonce = Math.random().toString(36).slice(2, 10);
-  const ext = fileExtensionForAudioBlob(blob);
-  const filename = 'screening_q' + which + '_' + ts + '_' + nonce + '.' + ext;
-  const { error } = await supabaseClient.storage.from('voice-memos').upload(filename, blob, {
-    upsert: false,
-    contentType: storageContentTypeForBlob(blob),
-  });
-  if (error) {
-    console.error('[Supabase storage] screening upload failed:', error, { bucket: 'voice-memos', filename });
-    throw error;
-  }
-  const { data: urlData } = supabaseClient.storage.from('voice-memos').getPublicUrl(filename);
-  return urlData.publicUrl;
+function uploadMainSurveyQuestionAudio(questionIndex, blob) {
+  return uploadParticipantAudio('main_q' + questionIndex, blob);
+}
+
+function uploadEligibilityScreeningAudio(which3Or4, blob) {
+  return uploadParticipantAudio('screening_q' + which3Or4, blob);
 }
 
 /**
- * Validates (written XOR voice per question), uploads to `voice-memos`, inserts into `research_responses`.
- * text_q* / trans_q* for written answers; for voice, trans_* starts empty until the DB webhook runs the Edge Function.
- * Success shows immediately after insert. Never call supabase.functions from the browser.
+ * Poll until DB webhook + `transcribe-audio` fill `q3_reason` or `q4_reason` on the draft row.
+ */
+async function pollScreeningReasonColumn(rowId, columnKey) {
+  const maxAttempts = 60;
+  const intervalMs = 1500;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabaseClient
+      .from('research_responses')
+      .select(columnKey)
+      .eq('id', rowId)
+      .single();
+    if (error) throw error;
+    const v = data && data[columnKey];
+    if (v != null && String(v).trim() !== '') {
+      return String(v).trim();
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, intervalMs);
+    });
+  }
+  throw new Error('Transcription timed out waiting for ' + columnKey);
+}
+
+/**
+ * Upload → INSERT or UPDATE `research_responses` with screening audio URL → webhook transcribes → poll `q3_reason`/`q4_reason`.
+ */
+async function runScreeningVoiceWebhookPipeline(which, blob) {
+  if (!supabaseClient) throw new Error('Supabase not initialized');
+  const urlField = which === 3 ? 'screening_q3_audio_url' : 'screening_q4_audio_url';
+  const reasonCol = which === 3 ? 'q3_reason' : 'q4_reason';
+
+  if (which === 3) {
+    q3_reason = '';
+    screeningQ3UploadedUrl = '';
+    screeningQ3TranscriptionPending = true;
+  } else {
+    q4_reason = '';
+    screeningQ4UploadedUrl = '';
+    screeningQ4TranscriptionPending = true;
+  }
+  updateScreeningProceedButton();
+  setScreeningRecordButtonTranscribing(which);
+
+  const publicUrl = await uploadEligibilityScreeningAudio(which, blob);
+  if (which === 3) {
+    screeningQ3UploadedUrl = publicUrl;
+  } else {
+    screeningQ4UploadedUrl = publicUrl;
+  }
+
+  let rowId = null;
+  try {
+    rowId = sessionStorage.getItem(SCREENING_ROW_ID_KEY);
+  } catch (e) {}
+
+  if (!rowId) {
+    const base = Object.assign({}, EMPTY_MAIN_Q_AUDIO_URLS, getScreeningAnswersSnapshot(), {
+      screening_q3_audio_url: '',
+      screening_q4_audio_url: '',
+      screening_q3_reason: '',
+      screening_q4_reason: '',
+      q3_reason: '',
+      q4_reason: '',
+      submitted_at: null,
+    });
+    base[urlField] = publicUrl;
+    const { data, error } = await supabaseClient.from('research_responses').insert([base]).select('id').single();
+    if (error) throw error;
+    rowId = data.id;
+    try {
+      sessionStorage.setItem(SCREENING_ROW_ID_KEY, rowId);
+    } catch (e) {}
+  } else {
+    const { error } = await supabaseClient.from('research_responses').update({ [urlField]: publicUrl }).eq('id', rowId);
+    if (error) throw error;
+  }
+
+  const text = await pollScreeningReasonColumn(rowId, reasonCol);
+  if (which === 3) {
+    q3_reason = text;
+    screeningQ3TranscriptionPending = false;
+    const ta = document.getElementById('screening_q3_reason');
+    if (ta) ta.value = text;
+  } else {
+    q4_reason = text;
+    screeningQ4TranscriptionPending = false;
+    const ta = document.getElementById('screening_q4_reason');
+    if (ta) ta.value = text;
+  }
+  setScreeningRecordButtonIdle(which);
+  onScreeningChange().catch(function (err) {
+    console.warn('[Screening]', err);
+  });
+}
+
+/**
+ * Validates (written XOR voice per question), uploads to `voice-memos`, saves `research_responses`.
+ * Main survey voice: `trans_q*` filled by DB webhook → `transcribe-audio` after insert/update.
+ * Eligibility voice: same webhook fills `q3_reason` / `q4_reason` from screening audio URLs (draft row may exist before final submit).
+ * Never call Edge Functions from the browser for transcription.
  */
 async function submitSurvey(ev) {
-  // Upload + insert only. Background transcription is triggered by the database webhook, not the client.
+  // Upload + insert or update. Transcription is triggered by the database webhook, not the client.
   ev.preventDefault();
 
   if (!supabaseClient) {
@@ -815,13 +1041,7 @@ async function submitSurvey(ev) {
     }
   }
 
-  const audioUrls = {
-    audio_q1: '',
-    audio_q2: '',
-    audio_q3: '',
-    audio_q4: '',
-    audio_q5: '',
-  };
+  const qAudioUrls = { 1: '', 2: '', 3: '', 4: '', 5: '' };
 
   /** Written text for text-mode questions; audio-mode leaves trans_* empty for background jobs. */
   const transByQ = { 1: '', 2: '', 3: '', 4: '', 5: '' };
@@ -850,7 +1070,7 @@ async function submitSurvey(ev) {
     try {
       for (let qUp = 1; qUp <= 5; qUp++) {
         if (getResponseMode(qUp) === 'audio' && recordedBlobs['q' + qUp]) {
-          audioUrls['audio_q' + qUp] = await uploadAudioBlob(qUp, recordedBlobs['q' + qUp]);
+          qAudioUrls[qUp] = await uploadMainSurveyQuestionAudio(qUp, recordedBlobs['q' + qUp]);
         }
       }
     } catch (err) {
@@ -891,29 +1111,47 @@ async function submitSurvey(ev) {
     trans_q3: transByQ[3],
     trans_q4: transByQ[4],
     trans_q5: transByQ[5],
-    audio_q1: audioUrls.audio_q1 || '',
-    audio_q2: audioUrls.audio_q2 || '',
-    audio_q3: audioUrls.audio_q3 || '',
-    audio_q4: audioUrls.audio_q4 || '',
-    audio_q5: audioUrls.audio_q5 || '',
+    q1_audio_url: qAudioUrls[1] || '',
+    q2_audio_url: qAudioUrls[2] || '',
+    q3_audio_url: qAudioUrls[3] || '',
+    q4_audio_url: qAudioUrls[4] || '',
+    q5_audio_url: qAudioUrls[5] || '',
     ...screeningExtras,
     submitted_at: new Date().toISOString(),
   };
 
-  const { error } = await supabaseClient.from('research_responses').insert([row]);
+  let draftRowId = null;
+  try {
+    draftRowId = sessionStorage.getItem(SCREENING_ROW_ID_KEY);
+  } catch (e) {}
+
+  let error = null;
+  if (draftRowId) {
+    const res = await supabaseClient.from('research_responses').update(row).eq('id', draftRowId);
+    error = res.error;
+  } else {
+    const res = await supabaseClient.from('research_responses').insert([row]);
+    error = res.error;
+  }
+
   if (error) {
-    console.error('[Supabase] insert research_responses failed:', error, {
+    console.error('[Supabase] save research_responses failed:', error, {
       message: error.message,
       details: error.details,
       hint: error.hint,
       code: error.code,
       payloadKeys: Object.keys(row),
+      draftRowId: draftRowId,
     });
     showError('Submission error: ' + (error.message || error));
     submitBtn.disabled = false;
     submitBtn.textContent = submitLabelDefault;
     return;
   }
+
+  try {
+    sessionStorage.removeItem(SCREENING_ROW_ID_KEY);
+  } catch (e) {}
 
   for (let rq = 1; rq <= 5; rq++) revokeAudioPreview(rq);
   resetAllRecordButtons();

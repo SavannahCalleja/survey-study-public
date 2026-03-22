@@ -1,6 +1,7 @@
 /**
- * Triggered by a Supabase Database Webhook on INSERT into `research_responses`.
- * Transcribes each non-empty `audio_q*` URL (or legacy `audio_url`) via OpenAI Whisper, then updates the same row’s `trans_q*` fields.
+ * Database Webhook on `research_responses` (INSERT or UPDATE): transcribe audio URLs on the row.
+ * - `q1_audio_url`..`q5_audio_url` → `trans_q1`..`trans_q5` (main survey)
+ * - `screening_q3_audio_url` → `q3_reason`, `screening_q4_audio_url` → `q4_reason` (eligibility voice)
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
@@ -52,8 +53,8 @@ Deno.serve(async (req) => {
     }
 
     const eventType = extracted.eventType ?? (typeof parsed.type === "string" ? parsed.type : null);
-    if (eventType && eventType !== "INSERT") {
-      return json({ ok: true, skipped: "only_insert_processed" });
+    if (eventType === "DELETE") {
+      return json({ ok: true, skipped: "delete_not_processed" });
     }
 
     const tableName = extracted.table ?? (typeof parsed.table === "string" ? parsed.table : null);
@@ -61,13 +62,15 @@ Deno.serve(async (req) => {
       return json({ ok: true, skipped: "wrong_table" });
     }
 
-    const audioSources = gatherAudioSources(record);
-    if (audioSources.length === 0) {
+    const oldRecord = extractOldRecordFromWebhook(parsed);
+
+    const jobs = collectTranscriptionJobs(record, oldRecord);
+    if (jobs.length === 0) {
       return json({
-        ok: false,
-        error: "no_audio_url_on_record",
+        ok: true,
+        skipped: "no_new_or_changed_audio_urls",
         message:
-          "Transcription skipped: no audio_url or audio_q1..audio_q5 present on record (would crash downstream).",
+          "Nothing to transcribe: no new/changed q*_audio_url, screening_q3_audio_url, or screening_q4_audio_url.",
       });
     }
 
@@ -88,10 +91,10 @@ Deno.serve(async (req) => {
 
     const updates: Record<string, string> = {};
 
-    for (const { q, url: raw } of audioSources) {
+    for (const { dbColumn, url: raw } of jobs) {
       const fullUrl = resolveFullPublicAudioUrl(raw, supabaseUrl);
       const text = await transcribeAudioUrl(fullUrl, openaiKey);
-      updates[`trans_q${q}`] = text;
+      updates[dbColumn] = text;
     }
 
     const { error } = await supabase
@@ -168,22 +171,75 @@ function extractRecordFromWebhook(parsed: Record<string, unknown>): ExtractResul
   return { record: null, eventType: null, table: null, source: "none" };
 }
 
-/** Collect per-question audio URLs; if only `audio_url` is set, treat as Q1. */
-function gatherAudioSources(record: Record<string, unknown>): { q: number; url: string }[] {
-  const out: { q: number; url: string }[] = [];
+function extractOldRecordFromWebhook(parsed: Record<string, unknown>): Record<string, unknown> | null {
+  let body: unknown = parsed.body;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      body = undefined;
+    }
+  }
+  if (body && typeof body === "object") {
+    const b = body as Record<string, unknown>;
+    if (b.old_record && typeof b.old_record === "object") {
+      return b.old_record as Record<string, unknown>;
+    }
+  }
+  if (parsed.old_record && typeof parsed.old_record === "object") {
+    return parsed.old_record as Record<string, unknown>;
+  }
+  const payload = parsed.payload;
+  if (payload && typeof payload === "object") {
+    const p = payload as Record<string, unknown>;
+    if (p.old_record && typeof p.old_record === "object") {
+      return p.old_record as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+/**
+ * INSERT: transcribe every non-empty audio URL on the row.
+ * UPDATE: only when a watched URL changed vs `oldRecord` (second screening clip, final survey audio, etc.).
+ */
+function collectTranscriptionJobs(
+  record: Record<string, unknown>,
+  oldRecord: Record<string, unknown> | null
+): { dbColumn: string; url: string }[] {
+  const jobs: { dbColumn: string; url: string }[] = [];
+
+  const urlChanged = (key: string): boolean => {
+    const u = record[key];
+    if (typeof u !== "string" || !u.trim()) return false;
+    if (!oldRecord) return true;
+    return oldRecord[key] !== u;
+  };
+
   for (let q = 1; q <= 5; q++) {
-    const raw = record[`audio_q${q}`];
-    if (typeof raw === "string" && raw.trim() !== "") {
-      out.push({ q, url: raw.trim() });
+    const uk = `q${q}_audio_url`;
+    if (urlChanged(uk)) {
+      const u = record[uk];
+      if (typeof u === "string" && u.trim()) {
+        jobs.push({ dbColumn: `trans_q${q}`, url: u.trim() });
+      }
     }
   }
-  if (out.length === 0) {
-    const single = record["audio_url"];
-    if (typeof single === "string" && single.trim() !== "") {
-      out.push({ q: 1, url: single.trim() });
+
+  if (urlChanged("screening_q3_audio_url")) {
+    const u = record["screening_q3_audio_url"];
+    if (typeof u === "string" && u.trim()) {
+      jobs.push({ dbColumn: "q3_reason", url: u.trim() });
     }
   }
-  return out;
+  if (urlChanged("screening_q4_audio_url")) {
+    const u = record["screening_q4_audio_url"];
+    if (typeof u === "string" && u.trim()) {
+      jobs.push({ dbColumn: "q4_reason", url: u.trim() });
+    }
+  }
+
+  return jobs;
 }
 
 /**
