@@ -17,23 +17,29 @@ const mainSurveyUploadedAudioUrls = { 1: '', 2: '', 3: '', 4: '', 5: '' };
  * `research_responses` columns filled only by the transcribe Edge Function.
  * submitSurvey must not send these (would overwrite server transcriptions with empty strings).
  */
-const BACKEND_ONLY_TRANSCRIPTION_COLUMNS = [
+const SCREENING_TRANSCRIPTION_ONLY_COLUMNS = [
   'screening_q3_reason',
   'screening_q4_reason',
   'q3_reason',
   'q4_reason',
-  'trans_q1',
-  'trans_q2',
-  'trans_q3',
-  'trans_q4',
-  'trans_q5',
 ];
+
+/** Main survey: trans_q1…trans_q5 — never send from the browser on final submit. */
+const MAIN_SURVEY_TRANSCRIPTION_COLUMNS = ['trans_q1', 'trans_q2', 'trans_q3', 'trans_q4', 'trans_q5'];
+
+const BACKEND_ONLY_TRANSCRIPTION_COLUMNS = SCREENING_TRANSCRIPTION_ONLY_COLUMNS.concat(
+  MAIN_SURVEY_TRANSCRIPTION_COLUMNS
+);
 
 /** Used only in `submitSurvey` (final main-survey save). Screening "Proceed" does not call this. */
 function stripBackendTranscriptionColumns(payload) {
   var out = Object.assign({}, payload);
-  for (var i = 0; i < BACKEND_ONLY_TRANSCRIPTION_COLUMNS.length; i++) {
-    delete out[BACKEND_ONLY_TRANSCRIPTION_COLUMNS[i]];
+  var k;
+  for (k = 0; k < BACKEND_ONLY_TRANSCRIPTION_COLUMNS.length; k++) {
+    delete out[BACKEND_ONLY_TRANSCRIPTION_COLUMNS[k]];
+  }
+  for (k = 1; k <= 5; k++) {
+    delete out['trans_q' + k];
   }
   return out;
 }
