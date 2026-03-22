@@ -319,6 +319,14 @@ function getScreeningValue(name) {
   return el ? el.value : null;
 }
 
+/** DB boolean columns: 'yes' → true, 'no' → false, unanswered → null. */
+function screeningYesNoBoolean(htmlRadioName) {
+  const v = getScreeningValue(htmlRadioName);
+  if (v === 'yes') return true;
+  if (v === 'no') return false;
+  return null;
+}
+
 /**
  * Structured eligibility state aligned with `getScreeningAnswersSnapshot()` keys (screening_age, …).
  * Use for debugging and for enabling the Proceed button.
@@ -626,11 +634,11 @@ async function onScreeningChange() {
  * Eligibility → `research_responses` insert keys (must match Supabase column names).
  *
  * HTML radio `name`          → DB column
- * screen_age                 → screening_age
- * screen_ten_years           → screening_ten_years
- * screen_noninjury_break     → screening_noninjury_break
+ * screen_age                 → screening_age (boolean)
+ * screen_ten_years           → screening_ten_years (boolean)
+ * screen_noninjury_break     → screening_noninjury_break (boolean)
  * screen_pause_count         → screening_pause_count
- * screen_current_min         → screening_current_min
+ * screen_current_min         → screening_current_min (boolean)
  * (when Q3 follow-up shown)  → screening_q3_detail_mode  ('text'|'audio'|'' )
  * (when Q4 follow-up shown)  → screening_q4_detail_mode  ('text'|'audio'|'' )
  *
@@ -643,11 +651,11 @@ function getScreeningAnswersSnapshot() {
   const q3FollowUp = getScreeningValue('screen_noninjury_break') === 'yes';
   const q4FollowUp = getScreeningValue('screen_pause_count') === 'yes';
   return {
-    screening_age: getScreeningValue('screen_age') || '',
-    screening_ten_years: getScreeningValue('screen_ten_years') || '',
-    screening_noninjury_break: getScreeningValue('screen_noninjury_break') || '',
+    screening_age: screeningYesNoBoolean('screen_age'),
+    screening_ten_years: screeningYesNoBoolean('screen_ten_years'),
+    screening_noninjury_break: screeningYesNoBoolean('screen_noninjury_break'),
     screening_pause_count: getScreeningValue('screen_pause_count') || '',
-    screening_current_min: getScreeningValue('screen_current_min') || '',
+    screening_current_min: screeningYesNoBoolean('screen_current_min'),
     screening_q3_detail_mode: q3FollowUp ? getScreeningDetailMode(3) : '',
     screening_q4_detail_mode: q4FollowUp ? getScreeningDetailMode(4) : '',
   };
