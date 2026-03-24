@@ -632,9 +632,7 @@
       }
     }
 
-    .record-btn.recording,
-    #record-q3.record-btn.recording,
-    #record-q4.record-btn.recording {
+    .record-btn.recording {
       background: #b71c1c !important;
       color: #fff !important;
       animation: pulse 2.25s ease-in-out infinite;
@@ -642,9 +640,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .record-btn.recording,
-      #record-q3.record-btn.recording,
-      #record-q4.record-btn.recording {
+      .record-btn.recording {
         animation: none;
         box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
       }
@@ -666,7 +662,7 @@
       <p class="screening-phase__intro">
         Please answer each question honestly. Your responses determine whether you may continue to the main survey. This section uses different criteria than the questions that follow.
       </p>
-      <!-- research_responses screening columns (must match js/app.js): screening_age, screening_ten_years, screening_noninjury_break, screening_pause_count, screening_current_min, screening_q3_detail_mode, screening_q4_detail_mode, screening_q3_reason, screening_q4_reason, screening_q3_audio_url, screening_q4_audio_url, q4_reason -->
+      <!-- research_responses screening columns (must match js/app.js): screening_age, screening_ten_years, screening_noninjury_break, screening_pause_count, screening_current_min, screening_q3_detail_mode, screening_q4_detail_mode, screening_q3_reason, screening_q4_reason, screening_q3_audio_url, screening_q4_audio_url, q3_reason, q4_reason -->
 
       <fieldset class="screening-question">
         <legend class="screening-question__legend">1. Are you between 18 and 85 years of age?</legend>
@@ -692,59 +688,23 @@
 
       <fieldset class="screening-question">
         <legend class="screening-question__legend">3. In the last 10 years, have you had any continuous break from training longer than 3 months for reasons <em>other than</em> injury?</legend>
+        <p class="screening-hard-rule">
+          You must answer <strong>Yes</strong> to continue. If you answer <strong>No</strong>, you cannot take part in this study.
+        </p>
         <div class="screening-question__options">
           <label class="screening-option"><input type="radio" name="screen_noninjury_break" value="yes"> Yes</label>
           <label class="screening-option"><input type="radio" name="screen_noninjury_break" value="no"> No</label>
-        </div>
-        <div id="screening_q3_detail_wrap" class="screening-detail-wrap" aria-live="polite">
-          <p class="screening-detail-label">Please briefly describe the reason for this break or these pauses.</p>
-          <fieldset class="screening-detail-mode-fieldset">
-            <legend class="screening-detail-mode-legend">Response format (choose one)</legend>
-            <div class="screening-question__options">
-              <label class="screening-option"><input type="radio" name="screening_detail_mode_q3" value="text" checked> Written response</label>
-              <label class="screening-option"><input type="radio" name="screening_detail_mode_q3" value="audio"> Voice recording</label>
-            </div>
-          </fieldset>
-          <div id="screening_q3_text_panel" class="screening-detail-panel">
-            <label for="screening_q3_reason" class="screening-detail-sublabel">Your response</label>
-            <textarea id="screening_q3_reason" name="screening_q3_reason" rows="3" class="screening-detail-textarea" spellcheck="true" autocomplete="off"></textarea>
-          </div>
-          <div id="screening_q3_audio_panel" class="screening-detail-panel" hidden>
-            <div class="screening-detail-audio-actions">
-              <button type="button" id="record-q3" class="record-btn screening-record-btn" data-screening-q="3" aria-label="Record voice answer for eligibility follow-up question 3">Record answer</button>
-              <audio class="screening-audio-player" data-screening-q="3" controls style="display:none;"></audio>
-            </div>
-            <p id="screening_q3_upload_status" class="screening-upload-status" hidden aria-live="polite"></p>
-          </div>
         </div>
       </fieldset>
 
       <fieldset class="screening-question">
         <legend class="screening-question__legend">4. Over the last 10 years, have you had more than 5 pauses in training lasting 3 months or more (including for injuries)?</legend>
+        <p class="screening-hard-rule">
+          You must answer <strong>Yes</strong> to continue. If you answer <strong>No</strong>, you cannot take part in this study.
+        </p>
         <div class="screening-question__options">
           <label class="screening-option"><input type="radio" name="screen_pause_count" value="yes"> Yes</label>
           <label class="screening-option"><input type="radio" name="screen_pause_count" value="no"> No</label>
-        </div>
-        <div id="screening_q4_detail_wrap" class="screening-detail-wrap" aria-live="polite">
-          <p class="screening-detail-label">Please briefly describe the reason for this break or these pauses.</p>
-          <fieldset class="screening-detail-mode-fieldset">
-            <legend class="screening-detail-mode-legend">Response format (choose one)</legend>
-            <div class="screening-question__options">
-              <label class="screening-option"><input type="radio" name="screening_detail_mode_q4" value="text" checked> Written response</label>
-              <label class="screening-option"><input type="radio" name="screening_detail_mode_q4" value="audio"> Voice recording</label>
-            </div>
-          </fieldset>
-          <div id="screening_q4_text_panel" class="screening-detail-panel">
-            <label for="screening_q4_reason" class="screening-detail-sublabel">Your response</label>
-            <textarea id="screening_q4_reason" name="screening_q4_reason" rows="3" class="screening-detail-textarea" spellcheck="true" autocomplete="off"></textarea>
-          </div>
-          <div id="screening_q4_audio_panel" class="screening-detail-panel" hidden>
-            <div class="screening-detail-audio-actions">
-              <button type="button" id="record-q4" class="record-btn screening-record-btn" data-screening-q="4" aria-label="Record voice answer for eligibility follow-up question 4">Record answer</button>
-              <audio class="screening-audio-player" data-screening-q="4" controls style="display:none;"></audio>
-            </div>
-            <p id="screening_q4_upload_status" class="screening-upload-status" hidden aria-live="polite"></p>
-          </div>
         </div>
       </fieldset>
 
@@ -764,7 +724,7 @@
           Proceed to survey
         </button>
         <p class="screening-proceed-hint">
-          Complete all questions and any follow-ups (written or voice), then continue to the main survey.
+          Answer every question. You must answer <strong>Yes</strong> to questions 1–5 to continue to the main survey.
         </p>
       </div>
     </div>
@@ -1007,6 +967,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app.js?v=30"></script>
+<script src="js/app.js?v=31"></script>
 </body>
 </html>
