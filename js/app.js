@@ -387,7 +387,7 @@ function screeningYesNoBoolean(htmlRadioName) {
 
 /**
  * Structured eligibility state aligned with `getScreeningAnswersSnapshot()` keys (screening_age, …).
- * Use for debugging and for enabling the Proceed button.
+ * Proceed requires: Q1=Yes, Q2=Yes, Q3=No, Q4=No, Q5=Yes (Q3/Q4 are exclusion criteria — Yes disqualifies).
  */
 function getEligibilityCheckResult() {
   const snapshot = getScreeningAnswersSnapshot();
@@ -402,11 +402,11 @@ function getEligibilityCheckResult() {
   const hardReasons = [];
   if (getScreeningValue('screen_age') === 'no') hardReasons.push('screening_age:no (hard ineligible)');
   if (getScreeningValue('screen_ten_years') === 'no') hardReasons.push('screening_ten_years:no (hard ineligible)');
-  if (getScreeningValue('screen_noninjury_break') === 'no') {
-    hardReasons.push('screening_noninjury_break:no (hard ineligible)');
+  if (getScreeningValue('screen_noninjury_break') === 'yes') {
+    hardReasons.push('screening_noninjury_break:yes (exclusion — Q3)');
   }
-  if (getScreeningValue('screen_pause_count') === 'no') {
-    hardReasons.push('screening_pause_count:no (hard ineligible)');
+  if (getScreeningValue('screen_pause_count') === 'yes') {
+    hardReasons.push('screening_pause_count:yes (exclusion — Q4)');
   }
   if (getScreeningValue('screen_current_min') === 'no') hardReasons.push('screening_current_min:no (hard ineligible)');
 
@@ -421,24 +421,24 @@ function getEligibilityCheckResult() {
   };
 }
 
-/** Same as `getEligibilityCheckResult().canProceed` — all radios answered, hard gates pass, follow-ups done. */
+/** Same as `getEligibilityCheckResult().canProceed` — all radios answered; inclusion + exclusion rules satisfied. */
 function isEligible() {
   return getEligibilityCheckResult().canProceed;
 }
 
 /**
- * Hard gates (questions 1–5): participant must answer Yes to each; No → ineligible screen.
+ * Inclusion: Q1, Q2, Q5 must be Yes. Exclusion: Q3 and Q4 must be No (Yes on those disqualifies).
  */
 function screeningHardIneligible() {
   if (getScreeningValue('screen_age') === 'no') return true;
   if (getScreeningValue('screen_ten_years') === 'no') return true;
-  if (getScreeningValue('screen_noninjury_break') === 'no') return true;
-  if (getScreeningValue('screen_pause_count') === 'no') return true;
+  if (getScreeningValue('screen_noninjury_break') === 'yes') return true;
+  if (getScreeningValue('screen_pause_count') === 'yes') return true;
   if (getScreeningValue('screen_current_min') === 'no') return true;
   return false;
 }
 
-/** True when user may click "Proceed to survey" (all radios answered, all Yes). */
+/** True when user may click "Proceed to survey" (Q1=Yes, Q2=Yes, Q3=No, Q4=No, Q5=Yes, all answered). */
 function canProceedFromScreening() {
   return getEligibilityCheckResult().canProceed;
 }
